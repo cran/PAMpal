@@ -1,0 +1,187 @@
+#' @title Calculate Inter-Click Interval
+#'
+#' @description Calculate inter-click interval for click data
+#'
+#' @param x a \linkS4class{AcousticStudy} object, a list of \linkS4class{AcousticEvent}
+#'   objects, or a single \linkS4class{AcousticEvent} object
+#' @param time the time measurement to use. \code{start} will use the \code{UTC} value,
+#'   \code{peak} will use the \code{peakTime} value if present (currently present in
+#'   \code{standardClickCalcs}, this is the time of the peak of the waveform)
+#' @param callType the call type to calculate ICI for, usually this is \code{click}
+#'   but also allows users to specify \code{whistle} or \code{cepstrum} to calculate this
+#'   using other detector data
+#' @param \dots not currently used
+#'
+#' @details Calculates the ICI for each individual detector and across all detectors.
+#'   ICI calculation is done by ordering all individual detections by time, then taking
+#'   the difference between consecutive detections and approximating the mode value.
+#'
+#' @return the same object as \code{x}, with ICI data added to the "ancillary" slot
+#'   of each AcousticEvent. Two items will be added. $ici contains all of the
+#'   individual inter-click intervals used to calculate the ICI, as well as an "All"
+#'   ICI using all the combined data. $measures will also have a ICI measurement added
+#'   for each detector, this will be the single modal value. Data in the $measures spot
+#'   can be exported easily to modeling algorithms. \code{getICI} will just return either
+#'   the values stored in $ici for \code{type = 'data'} or the values stored in
+#'   $measures for \code{type = 'value'}
+#'
+#' @author Taiki Sakai \email{taiki.sakai@@noaa.gov}
+#'
+#' @examples
+#'
+#' # setting up example data
+#' data(exStudy)
+#' exStudy <- calculateICI(exStudy)
+#' # each event has its ICI data stored separately, these are 0
+#' # because there is only a single click in this event
+#' ancillary(exStudy[[1]])$ici
+#' # also saves it in measures that will get exported for modeling
+#' ancillary(exStudy[[1]])$measures
+#'
+#' @name calculateICI
+#'
+#' @importFrom dplyr bind_rows
+#' @importFrom stats density
+#'
+#' @export
+#'
+setGeneric('calculateICI', function(x,
+                                    time=c('UTC', 'peakTime'),
+                                    callType = c('click', 'whistle', 'cepstrum'),
+                                    ...) standardGeneric('calculateICI'))
+
+#' @rdname calculateICI
+#' @export
+#'
+setMethod('calculateICI', 'AcousticStudy', function(x,
+                                                    time=c('UTC', 'peakTime'),
+                                                    callType = c('click', 'whistle', 'cepstrum'),
+                                                    ...) {
+    events(x) <- lapply(events(x), function(e) calculateICI(e, time, callType, ...))
+    x
+})
+
+#' @rdname calculateICI
+#' @export
+#'
+setMethod('calculateICI', 'AcousticEvent', function(x,
+                                                    time=c('UTC', 'peakTime'),
+                                                    callType = c('click', 'whistle', 'cepstrum'),
+                                                    ...) {
+    callType <- match.arg(callType)
+    detData <- getDetectorData(x)[[callType]]
+    if(is.null(detData)) {
+        message('No detector data found for call type', callType, 'in event', id(x), '\n')
+        return(x)
+    }
+    detNames <- unique(detData$detectorName)
+    iciList <- vector('list', length = length(detNames) + 1)
+    names(iciList) <- c(detNames, 'All')
+    time <- match.arg(time)
+    for(d in detNames) {
+        iciList[[d]] <- data.frame(name=d,
+                                   ici=dfICI(detData[detData$detectorName == d, ], time),
+                                   stringsAsFactors = FALSE)
+    }
+    iciList[['All']] <- data.frame(name='All',
+                                   ici=dfICI(detData, time),
+                                   stringsAsFactors = FALSE)
+    oldIci <- ancillary(x)$ici
+    if(!is.null(oldIci)) {
+        iciList <- safeListAdd(oldIci, iciList)
+    }
+    ancillary(x)$ici <- iciList
+    # browser()
+    iciMode <- lapply(iciList, function(i) {
+        ici <- i$ici[i$ici > 0]
+        if(length(ici) == 0) {
+            return(0)
+        }
+        if(!is.na(sd(ici)) &&
+           sd(ici) != 0) {
+            iciZ <- (ici - mean(ici)) / sd(ici)
+            ici <- ici[abs(iciZ) < 2]
+            if(any(abs(iciZ) < 2)) {
+                iciZ <- (ici - mean(ici)) / sd(ici)
+                ici <- ici[abs(iciZ) < 2]
+            }
+            if(length(ici) == 0) {
+                return(0)
+            }
+        }
+        den <- density(ici)
+        mode <- den$x[which.max(den$y)]
+        if(mode < 0) mode <- 0
+        mode
+    })
+    names(iciMode) <- paste0(names(iciMode), '_ici')
+    ancillary(x)$measures <- safeListAdd(ancillary(x)$measures, iciMode)
+    x
+})
+
+dfICI <- function(x, time='UTC', plot=FALSE) {
+    # check if peakTime is full time or just time within the waveform
+    # 1e4 arbitrary, but UTC as numeric will be ~ 1e9
+    if(time == 'peakTime' &&
+       is.numeric(x$peakTime[1]) &&
+       x$peakTime[1] < 1e4) {
+        x$peakTime <- as.numeric(x$UTC) + x$peakTime
+    }
+    if('Channel' %in% colnames(x)) {
+        unlist(lapply(unique(x$Channel), function(c) {
+            calcICI(x[x$Channel == c, time])
+        }))
+    } else {
+        calcICI(x[, time])
+    }
+}
+
+
+calcICI <- function(x) {
+    if(length(x) == 1) return(0)
+    time <- sort(as.numeric(x))
+    ici <- time - c(time[1], time[1:(length(time)-1)])
+    ici
+}
+
+#' @export
+#' @rdname calculateICI
+#' @param type the type of data to return, one of 'value' or 'data'. 'value' returns
+#'  the single ICI value for each detector, 'data' returns all the individual ICI values
+#'  used to calculate the number returned by 'value'
+#'
+getICI <- function(x, type=c('value', 'data')) {
+    type <- match.arg(type)
+    if(is.AcousticStudy(x)) {
+        result <- suppressWarnings(lapply(events(x), function(e) getICI(e, type)))
+        noICI <- sapply(result, function(r) is.null(r))
+        if(all(noICI)) {
+            warning('No ICI data found, run "calculateICI" first')
+            return(NULL)
+        }
+        if(any(noICI)) {
+            warning('No ICI data found in event(s) ', printN(names(result)[noICI], 6))
+        }
+        return(result)
+    }
+    if(!is.AcousticEvent(x)) {
+        stop('Input must be an AcousticStudy or AcousticEvent')
+    }
+    switch(type,
+           'value' = {
+               isIci <- grep('_ici$', names(ancillary(x)$measures), value=TRUE)
+               if(length(isIci) == 0) {
+                   warning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
+                   return(NULL)
+               }
+               ancillary(x)$measures[isIci]
+           },
+           'data' = {
+               if(is.null(ancillary(x)$ici)) {
+                   warning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
+                   return(NULL)
+               }
+               ancillary(x)$ici
+           })
+}
+
