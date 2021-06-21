@@ -71,7 +71,7 @@ setMethod('calculateICI', 'AcousticEvent', function(x,
     callType <- match.arg(callType)
     detData <- getDetectorData(x)[[callType]]
     if(is.null(detData)) {
-        message('No detector data found for call type', callType, 'in event', id(x), '\n')
+        message('No detector data found for call type "', callType, '" in event "', id(x), '"\n')
         return(x)
     }
     detNames <- unique(detData$detectorName)
@@ -79,23 +79,28 @@ setMethod('calculateICI', 'AcousticEvent', function(x,
     names(iciList) <- c(detNames, 'All')
     time <- match.arg(time)
     for(d in detNames) {
-        iciList[[d]] <- data.frame(name=d,
-                                   ici=dfICI(detData[detData$detectorName == d, ], time),
-                                   stringsAsFactors = FALSE)
+        thisIci <- dfICI(detData[detData$detectorName == d, ], time)
+        thisIci$name <- d
+        iciList[[d]] <- thisIci
     }
-    iciList[['All']] <- data.frame(name='All',
-                                   ici=dfICI(detData, time),
-                                   stringsAsFactors = FALSE)
+    allIci <- dfICI(detData, time)
+    allIci$name <- 'All'
+    iciList[['All']] <- allIci
+
     oldIci <- ancillary(x)$ici
     if(!is.null(oldIci)) {
         iciList <- safeListAdd(oldIci, iciList)
     }
     ancillary(x)$ici <- iciList
     # browser()
+    # filter outliers before mode calc
     iciMode <- lapply(iciList, function(i) {
         ici <- i$ici[i$ici > 0]
         if(length(ici) == 0) {
             return(0)
+        }
+        if(length(ici) == 1) {
+            return(ici)
         }
         if(!is.na(sd(ici)) &&
            sd(ici) != 0) {
@@ -108,6 +113,9 @@ setMethod('calculateICI', 'AcousticEvent', function(x,
             if(length(ici) == 0) {
                 return(0)
             }
+            if(length(ici) == 1) {
+                return(ici)
+            }
         }
         den <- density(ici)
         mode <- den$x[which.max(den$y)]
@@ -116,10 +124,11 @@ setMethod('calculateICI', 'AcousticEvent', function(x,
     })
     names(iciMode) <- paste0(names(iciMode), '_ici')
     ancillary(x)$measures <- safeListAdd(ancillary(x)$measures, iciMode)
+    x <- .addPamWarning(x)
     x
 })
 
-dfICI <- function(x, time='UTC', plot=FALSE) {
+dfICI <- function(x, time='UTC') {
     # check if peakTime is full time or just time within the waveform
     # 1e4 arbitrary, but UTC as numeric will be ~ 1e9
     if(time == 'peakTime' &&
@@ -128,20 +137,27 @@ dfICI <- function(x, time='UTC', plot=FALSE) {
         x$peakTime <- as.numeric(x$UTC) + x$peakTime
     }
     if('Channel' %in% colnames(x)) {
-        unlist(lapply(unique(x$Channel), function(c) {
-            calcICI(x[x$Channel == c, time])
+        bind_rows(lapply(unique(x$Channel), function(c) {
+            calcICI(x[x$Channel == c, c('UID', 'Channel', time)], time)
         }))
     } else {
-        calcICI(x[, time])
+        calcICI(x[, c('UID', time)], time)
     }
 }
 
 
-calcICI <- function(x) {
-    if(length(x) == 1) return(0)
-    time <- sort(as.numeric(x))
-    ici <- time - c(time[1], time[1:(length(time)-1)])
-    ici
+calcICI <- function(x, time) {
+    # x <- x[, c('UID', time)]
+    if(nrow(x) == 1) {
+        x$ici <- 0
+        return(x)
+    }
+    x$sort <- as.numeric(x[[time]])
+    x <- arrange(x, .data$sort)
+    ici <- x$sort - c(x$sort[1], x$sort[1:(nrow(x)-1)])
+    x$ici <- ici
+    x$sort <- NULL
+    x
 }
 
 #' @export
@@ -153,14 +169,14 @@ calcICI <- function(x) {
 getICI <- function(x, type=c('value', 'data')) {
     type <- match.arg(type)
     if(is.AcousticStudy(x)) {
-        result <- suppressWarnings(lapply(events(x), function(e) getICI(e, type)))
+        result <- suppressPamWarnings(lapply(events(x), function(e) getICI(e, type)))
         noICI <- sapply(result, function(r) is.null(r))
         if(all(noICI)) {
-            warning('No ICI data found, run "calculateICI" first')
+            pamWarning('No ICI data found, run "calculateICI" first')
             return(NULL)
         }
         if(any(noICI)) {
-            warning('No ICI data found in event(s) ', printN(names(result)[noICI], 6))
+            pamWarning('No ICI data found in event(s) ', names(result)[noICI], n=6)
         }
         return(result)
     }
@@ -171,14 +187,14 @@ getICI <- function(x, type=c('value', 'data')) {
            'value' = {
                isIci <- grep('_ici$', names(ancillary(x)$measures), value=TRUE)
                if(length(isIci) == 0) {
-                   warning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
+                   pamWarning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
                    return(NULL)
                }
                ancillary(x)$measures[isIci]
            },
            'data' = {
                if(is.null(ancillary(x)$ici)) {
-                   warning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
+                   pamWarning('No ICI data found in event ', id(x), ' run "calculateICI" first.')
                    return(NULL)
                }
                ancillary(x)$ici

@@ -28,7 +28,7 @@
 #'   one list for each unique detector type found in the \code{detectors} slots
 #'   of \code{x}. The data frames will only have columns with class
 #'   \code{numeric}, \code{integer}, \code{factor}, or \code{logical}, and
-#'   will also have columns named \code{UID}, \code{Id}, \code{parentUID},
+#'   will also have columns named \code{UID}, \code{Id}, \code{parentID},
 #'   \code{sampleRate}, \code{Channel}, \code{angle}, and \code{angleError},
 #'   removed so that these are not treated as parameters for the banter random
 #'   forest model. The dataframes will also have columns \code{event.id} and
@@ -154,8 +154,8 @@ export_banter <- function(x, dropVars=NULL, dropSpecies=NULL, training=TRUE, ver
         }))
         events <- cbind(events, measureData)
         if(verbose) {
-            cat('Found ', length(allMeasures), ' event level measures that were present',
-                ' in all events, adding these to your event data.\n', sep='')
+            cat('Found ', length(allMeasures), ' event level measures (', printN(allMeasures, 10),
+            ') that were present in all events, adding these to your event data.\n', sep='')
         }
     }
 
@@ -170,8 +170,9 @@ export_banter <- function(x, dropVars=NULL, dropSpecies=NULL, training=TRUE, ver
             if('Channel' %in% colnames(thisDet)) {
                 thisDet$call.id <- paste0('C', thisDet$Channel, thisDet$call.id)
             }
-            colsToDrop <- c('UID', 'Id', 'parentUID', 'sampleRate', 'Channel',
-                            'angle', 'angleError', 'peakTime')
+            # colsToDrop <- c('UID', 'Id', 'parentUID', 'sampleRate', 'Channel',
+            #                 'angle', 'angleError', 'peakTime')
+            colsToDrop <- ppVars()$nonModelVars
             colsToDrop <- unique(c(colsToDrop, dropVars))
             useCols <- lapply(thisDet, class) %in% c('numeric', 'integer', 'factor', 'logical') &
                 !(colnames(thisDet) %in% colsToDrop) |

@@ -14,6 +14,8 @@
 #' @slot calibration a named list of calibration functions to apply while
 #'   applying functions from the "functions" slot. Should named by the
 #'   PamGuard module, same as the "functions"
+#' @slot settings a named list of settings, usually imported from Pamguard's
+#'   "Export XML Configuration"
 #'
 #' @author Taiki Sakai \email{taiki.sakai@@noaa.gov}
 #' @export
@@ -23,13 +25,18 @@ setClass('PAMpalSettings',
              db = 'character',
              binaries = 'list',
              functions = 'list',
-             calibration = 'list'
+             calibration = 'list',
+             settings = 'list'
          ),
          prototype = prototype(
              db = character(0),
              binaries = list('folder'=character(0), 'list'=character(0)),
              functions = list('ClickDetector'=list(), 'WhistlesMoans'=list(), 'Cepstrum'=list()),
-             calibration = list('ClickDetector'=list())
+             calibration = list('ClickDetector'=list()),
+             settings = list(file=NA_character_,
+                             sources=list(),
+                             detectors=list(),
+                             raw=NA_character_)
          )
 )
 
@@ -81,6 +88,12 @@ setMethod('show', 'PAMpalSettings', function(object) {
         }
     }
     cat(nCal, 'click calibration function(s)\n')
+    nSet <- length(object@settings)
+    if(nSet == 0) {
+        cat('0 settings files\n')
+    } else {
+        cat('1 settings file:\n ', basename(object@settings$file), '\n', sep=' ')
+    }
 })
 
 #' Check if an Object is a PAMpalSettings

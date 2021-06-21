@@ -65,15 +65,16 @@ test_that('Test working with AcousticStudy object', {
     expect_equal(species(exData[[2]])$id, 'Test')
     # check manual edge cases
     expect_warning(setSpecies(exData, method='manual'), 'Manual mode requires')
-    expect_warning(setSpecies(exData, method='manual', value=1:3), 'Length of "value"')
+    expect_warning(setSpecies(exData, method='manual', value=1:4), 'Length of "value"')
     expect_warning(setSpecies(exData, method='manual', value= data.frame(old=1, new=2),
                               'must contain columns'))
     expect_message(setSpecies(exData, method='manual',
                               value = data.frame(event = 'a', species=1)),
                    'No match found')
-    exData <- setSpecies(exData, method = 'manual', value=letters[1:2])
+    exData <- setSpecies(exData, method = 'manual', value=letters[1:3])
     expect_equal(species(exData[[1]])$id, 'a')
     expect_equal(species(exData[[2]])$id, 'b')
+    expect_equal(species(exData[[3]])$id, 'c')
     exData <- setSpecies(exData, method='manual',
                          value = data.frame(event='Example.OE1', species = 'c'))
     expect_equal(species(exData[[1]])$id, 'c')
@@ -86,9 +87,9 @@ test_that('Test working with AcousticStudy object', {
     expect_equal(species(exData[[1]])$id, 'b')
     # test banter export
     banterData <- export_banter(exData, verbose=FALSE)
-    expect_equal(nrow(banterData$events), 2)
+    expect_equal(nrow(banterData$events), 3)
     expect_equal(length(banterData$detectors), 3)
-    expect_error(export_banter(exData, dropSpecies = 'b', verbose=FALSE))
+    expect_error(export_banter(exData, dropSpecies = c('b', 'c'), verbose=FALSE))
     lessData <- export_banter(exData, dropVars = c('peak'), verbose=FALSE)
     expect_true(!any(
         sapply(lessData$detectors, function(x) 'peak' %in% colnames(x))
@@ -98,7 +99,12 @@ test_that('Test working with AcousticStudy object', {
     recs <- system.file('extdata', 'Recordings', package='PAMpal')
     exData <- addRecordings(exData, folder = recs, log=FALSE, progress=FALSE)
     expect_identical(files(exData)$recordings$file, list.files(recs, full.names = TRUE))
-    expect_warning(addRecordings(exData, folder = 'DNE', log=FALSE, progress=FALSE))
+    expect_warning(warnRec <- addRecordings(exData, folder = 'DNE', log=FALSE, progress=FALSE))
+    
+    # test warning access from recorder warning
+    warns <- getWarnings(warnRec)
+    expect_is(warns, 'data.frame')
+    expect_true('Provided folder DNE does not exist.' %in% warns$message)
 
 })
 
@@ -106,13 +112,13 @@ test_that('Test filter', {
     data(exStudy)
     # test filtering
     filterNone <- filter(exStudy, VARDNE == 'DNE')
-    expect_identical(exStudy, filterNone)
+    expect_identical(events(exStudy), events(filterNone))
     exStudy <- setSpecies(exStudy, method='manual', value=letters[1:2])
     spFilter <- filter(exStudy, species == 'a')
     expect_equal(length(events(spFilter)), 1)
     expect_equal(species(spFilter[[1]])$id, 'a')
     spFilter <- filter(exStudy, species %in% letters[1:3])
-    expect_identical(spFilter, exStudy)
+    expect_identical(events(spFilter), events(exStudy))
     peakFilter <- filter(exStudy, peak < 20)
     expect_true(all(detectors(peakFilter)$click$peak < 20))
     peakFilter <- filter(exStudy, peak < 2000)
@@ -130,10 +136,10 @@ test_that('Test filter', {
         })
         x
     })
-    expect_identical(peakFilter, exStudy)
+    expect_identical(events(peakFilter), events(exStudy))
 
     dbFilter <- filter(exStudy, database == files(exStudy)$db)
-    expect_identical(exStudy, dbFilter)
+    expect_identical(events(exStudy), events(dbFilter))
     dbNone <- filter(exStudy, database == 'NODB.sqlite3')
     expect_equal(length(events(dbNone)), 0)
 })
@@ -175,24 +181,28 @@ test_that('Test getDetectorData', {
 test_that('Test updateFiles', {
     data(exStudy)
     # corrupting filepaths
-    recs <- system.file('extdata', 'Recordings', package='PAMpal')
-    exStudy <- addRecordings(exStudy, folder =recs, log=FALSE, progress=FALSE)
     files(exStudy)$db <- substr(files(exStudy)$db, start=5, stop=10e3)
     files(exStudy)$binaries <- substr(files(exStudy)$binaries, start=5, stop=10e3)
-    files(exStudy)$recordings$file <- substr(files(exStudy)$recordings$file, start=5, stop=10e3)
     files(exStudy[[1]])$db <- substr(files(exStudy[[1]])$db, start=5, stop=10e3)
     files(exStudy[[1]])$binaries <- substr(files(exStudy[[1]])$binaries, start=5, stop=10e3)
     db <- system.file('extdata', 'Example.sqlite3', package='PAMpal')
     bin <- system.file('extdata', 'Binaries', package='PAMpal')
     expect_true(!any(file.exists(files(exStudy)$db,
                                  files(exStudy)$binaries,
-                                 files(exStudy)$recordings$file,
+                                 # files(exStudy)$recordings$file,
                                  files(exStudy[[1]])$db,
                                  files(exStudy[[1]])$binaries)))
-    exStudy <- updateFiles(exStudy, db=db, bin=bin, recording = recs, verbose=FALSE)
+    exStudy <- updateFiles(exStudy, db=db, bin=bin, verbose=FALSE)
+    # exStudy <- updateFiles(exStudy, db=db, bin=bin, recording = recs, verbose=FALSE)
     expect_true(all(file.exists(files(exStudy)$db,
                                 files(exStudy)$binaries,
-                                files(exStudy)$recordings$file,
+                                # files(exStudy)$recordings$file,
                                 files(exStudy[[1]])$db,
                                 files(exStudy[[1]])$binaries)))
+    recs <- system.file('extdata', 'Recordings', package='PAMpal')
+    exStudy <- addRecordings(exStudy, folder =recs, log=FALSE, progress=FALSE)
+    files(exStudy)$recordings$file <- substr(files(exStudy)$recordings$file, start=5, stop=10e3)
+    expect_true(!any(file.exists(files(exStudy)$recordings$file)))
+    exStudy <- updateFiles(exStudy, recording=recs, verbose=FALSE)
+    expect_true(all(file.exists(files(exStudy)$recordings$file)))
 })

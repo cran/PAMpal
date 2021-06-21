@@ -6,12 +6,29 @@
 #'
 #' @param .data \linkS4class{AcousticStudy} or \linkS4class{AcousticEvent} to filter
 #' @param \dots Logical expressions, syntax is identical to \link[dplyr]{filter}.
-#'   There is a special case if \code{.data} is an AcousticStudy object where a
-#'   logical expression using \code{species} or \code{Species} will filter by the
-#'   species present in the \code{$id} of the \code{species} slot within each
-#'   AcousticEvent
+#'   There are special cases to filter by environmental variables, species ID, 
+#'   database, or detector name. See details.
 #' @param .preserve not used
 #'
+#' @details Most expression provided will be used to filter out detections based on
+#'   calculated parameters. 
+#'   
+#'   If the name of an environmental variable added using
+#'   \link{matchEnvData} is provided, will filter to only events with environmental
+#'   variables matching those conditions. 
+#'   
+#'   If a provided logical expression uses
+#'   \code{"species"} or \code{"Species"}, then events will be filtered using the
+#'   species present in the \code{$id} of the \code{species} slot of each event.
+#'   
+#'   If a provided logical expression uses \code{"database"} or \code{"Database"}, 
+#'   then only events with databases matching the expression in \code{files(.data)$db}
+#'   will remain
+#'   
+#'   If a provided logical expression uses \code{"detector"} or \code{"Detector"}, then
+#'   only detections from detectors with names matching the expression will remain in
+#'   events. Any events left with no detections will be removed.
+#' 
 #' @return The original \code{.data} object, filtered by the given logical expressions
 #'
 #' @examples
@@ -35,20 +52,23 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
     dotChars <- sapply(quos(...), as_label)
     notFilt <- names(dotChars) != ''
     if(any(notFilt)) {
-        warning('Did you put "=" when you meant "=="? This filter will not be applied.')
+        pamWarning('Did you put "=" when you meant "=="? This filter will not be applied.')
     }
     # do event level filters first
-    isSpecies <- grepl('^species|^Species', dotChars)
+    # browser()
+    # isSpecies <- grepl('^species|^Species', dotChars)
+    isSpecies <- grepl('species|Species', dotChars)
     if(any(isSpecies)) {
         # do species filtering first
         naSp <- sapply(events(.data), function(x) is.na(species(x)$id))
         if(any(naSp)) {
-            warning('Attempting to filter by species, but ', sum(naSp),
+            pamWarning('Attempting to filter by species, but ', sum(naSp),
                     ' species have not been set. These will be removed from',
                     ' the filtered results.')
         }
         spKeep <- rep(TRUE, length(events(.data)))
-        exprText <- gsub('(^species|^Species)', 'species(x)$id', dotChars[isSpecies])
+        # exprText <- gsub('(^species|^Species)', 'species(x)$id', dotChars[isSpecies])
+        exprText <- gsub('^(.*?)species(.*)', '\\1species(x)$id\\2', dotChars[isSpecies], ignore.case=TRUE)
         for(s in seq_along(exprText)) {
             thisKeep <- sapply(events(.data), function(x) eval(parse_expr(exprText[s])))
             thisKeep[is.na(thisKeep)] <- FALSE
@@ -57,14 +77,15 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
         }
         events(.data) <- events(.data)[spKeep]
         if(length(events(.data)) == 0) {
+            .data <- .addPamWarning(.data)
             return(.data)
         }
     }
 
-    isDb <- grepl('^database|^Database', dotChars)
+    isDb <- grepl('database|Database', dotChars)
     if(any(isDb)) {
         dbKeep <- rep(TRUE, length(events(.data)))
-        exprText <- gsub('(^database|^Database)', 'files(x)$db', dotChars[isDb])
+        exprText <- gsub('^(.*?)database(.*)', '\\1files(x)$db\\2', dotChars[isDb], ignore.case=TRUE)
         studyExpr <- gsub('\\(x\\)', '\\(\\.data\\)', exprText)
         for(d in seq_along(exprText)) {
             thisKeep <- sapply(events(.data), function(x) eval(parse_expr(exprText[d])))
@@ -80,6 +101,7 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
         events(.data) <- events(.data)[dbKeep]
         files(.data)$db <- files(.data)$db[studyKeep]
         if(length(events(.data)) == 0) {
+            .data <- .addPamWarning(.data)
             return(.data)
         }
     }
@@ -96,6 +118,7 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
             filteredEv <- doFilter(evDf[, !(names(evDf) %in% c('UTC', 'Longitude', 'Latitude')), drop=FALSE], ...)
             events(.data) <- events(.data)[names(events(.data)) %in% unique(filteredEv$event)]
             if(length(events(.data)) == 0) {
+                .data <- .addPamWarning(.data)
                 return(.data)
             }
         }
@@ -106,12 +129,29 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
     })
     isNull <- sapply(events(.data), is.null)
     events(.data) <- events(.data)[!isNull]
+    .data <- .addPamWarning(.data)
     .data
 }
 
 #' @export
 #'
 filter.AcousticEvent <- function(.data, ..., .preserve=FALSE) {
+    # browser()
+    dotChars <- sapply(quos(...), as_label)
+    isDetector <- grepl('^.{0,3}detector|^.{0,3}Detector', dotChars)
+    detKeep <- rep(TRUE, length(detectors(.data)))
+    if(any(isDetector)) {
+        exprText <- gsub('^(.*?)detector(.*)', '\\1names(detectors(.data))\\2', dotChars[isDetector], ignore.case=TRUE)
+        for(s in seq_along(exprText)) {
+            thisKeep <- eval(parse_expr(exprText[s]))
+            thisKeep[is.na(thisKeep)] <- FALSE
+            detKeep <- detKeep & thisKeep
+        }
+        if(!any(detKeep)) {
+            return(NULL)
+        }
+        detectors(.data) <- detectors(.data)[detKeep]
+    }
     detectors(.data) <- lapply(detectors(.data), function(x) {
         doFilter(x, ...)
     })

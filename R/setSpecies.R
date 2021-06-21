@@ -60,7 +60,7 @@ setSpecies <- function(x, method=c('pamguard', 'manual', 'reassign'), value, typ
     if(length(method) > 1) {
         methodPick <- menu(title='Please select a single assignment method.', choices = method)
         if(methodPick == 0) {
-            warning('No assignment method chosen, species cannot be assigned.')
+            pamWarning('No assignment method chosen, species cannot be assigned.')
             return(x)
         }
         method <- method[methodPick]
@@ -90,7 +90,7 @@ setSpecies <- function(x, method=c('pamguard', 'manual', 'reassign'), value, typ
                                                    id(acev[[i]]), ', select one to assign:'),
                                     choices = sp)
                        if(spix == 0) {
-                           warning('No species selected, assigning NA. Please fix later.')
+                           pamWarning('No species selected, assigning NA. Please fix later.')
                            sp <- NA_character_
                        } else {
                            sp <- sp[spix]
@@ -101,30 +101,31 @@ setSpecies <- function(x, method=c('pamguard', 'manual', 'reassign'), value, typ
            },
            'manual' = {
                if(missing(value)) {
-                   warning('Manual mode requires a "value" to set."')
+                   pamWarning('Manual mode requires a "value" to set."')
                    return(x)
                }
                if(inherits(value, 'data.frame')) {
                    if(!all(c('species', 'event') %in% colnames(value))) {
-                       warning('If "value" is a dataframe it must contain columns species and event.')
+                       pamWarning('If "value" is a dataframe it must contain columns species and event.')
                        return(x)
                    }
                    allIds <- sapply(acev, id)
                    hasId <- allIds %in% value$event
                    if(!all(hasId)) {
                        message('No match found for event(s) ',
-                               paste0(allIds[!hasId], collapse=', '),
+                               printN(allIds[!hasId], 6),
                                ' (Event names in "value" must match exactly)')
                    }
                    # cat('Assigning species ids to ', sum(hasId), ' events.\n', sep='')
                    for(i in which(hasId)) {
-                       species(acev[[i]])[[type]] <- value[value$event == id(acev[[i]]), 'species']
+                       # species(acev[[i]])[[type]] <- value[value$event == id(acev[[i]]), 'species', drop=TRUE]
+                       species(acev[[i]])[[type]] <- value[['species']][value$event == id(acev[[i]])]
                    }
                 # case when no a data frame
                } else {
                    if(length(value) != 1 &&
                       length(value) != length(acev)) {
-                       warning('Length of "value" must be either 1 or the number of events.')
+                       pamWarning('Length of "value" must be either 1 or the number of events.')
                        return(x)
                    }
                    if(length(value) == 1) {
@@ -135,47 +136,47 @@ setSpecies <- function(x, method=c('pamguard', 'manual', 'reassign'), value, typ
                    }
                }
            },
-           # 'am' = {
-           #     specDf <- distinct(do.call(rbind, lapply(acev, function(oneAe) {
-           #         dbs <- files(oneAe)$db
-           #         events <- do.call(rbind, lapply(dbs, function(y) {
-           #             con <- dbConnect(y, drv=SQLite())
-           #             evs <- dbReadTable(con, 'Click_Detector_OfflineEvents')
-           #             dbDisconnect(con)
-           #             # browser()
-           #             evs <- evs[, c('UID', 'eventType', 'comment')]
-           #             evs$event <- paste0(gsub('\\.sqlite3', '', basename(y)),
-           #                                    '.OE', as.character(evs$UID))
-           #             evs$eventType <- str_trim(evs$eventType)
-           #             evs$comment <- gsub('OFF EFF', '', evs$comment)
-           #             evs$comment <- gsub("[[:punct:]]", '', evs$comment)
-           #             evs$comment <- str_trim(evs$comment)
-           #             evs
-           #         }))
-           #         # events$event <- paste0('OE', as.character(events$UID))
-           #         events$species <- 'unid'
-           #         goodEvents <- c('BEAK', 'FORG')
-           #         events$species[events$eventType %in% goodEvents] <- str_split(events$comment[events$eventType %in% goodEvents],
-           #                                                               ' ', simplify=TRUE)[, 1]
-           #         events$species <- tolower(events$species)
-           #         events$species[events$species %in% c('mmme', 'mm')] <- 'unid'
-           #         events
-           #     }
-           #     )))
-           #     specToAssign <- unique(specDf[specDf$event %in% sapply(acev, id), 'species'])
-           #     if(length(specToAssign) > 0) {
-           #         cat('Assigning unique species: ', paste0(specToAssign, collapse = ', '), '.\n', sep = '')
-           #     }
-           #     acev <- setSpecies(acev, method = 'manual', type=type, value = specDf)
-           # },
+           'am' = {
+               specDf <- distinct(do.call(rbind, lapply(acev, function(oneAe) {
+                   dbs <- files(oneAe)$db
+                   events <- do.call(rbind, lapply(dbs, function(y) {
+                       con <- dbConnect(y, drv=SQLite())
+                       evs <- dbReadTable(con, 'Click_Detector_OfflineEvents')
+                       dbDisconnect(con)
+                       # browser()
+                       evs <- evs[, c('UID', 'eventType', 'comment')]
+                       evs$event <- paste0(gsub('\\.sqlite3', '', basename(y)),
+                                              '.OE', as.character(evs$UID))
+                       evs$eventType <- str_trim(evs$eventType)
+                       evs$comment <- gsub('OFF EFF', '', evs$comment)
+                       evs$comment <- gsub("[[:punct:]]", '', evs$comment)
+                       evs$comment <- str_trim(evs$comment)
+                       evs
+                   }))
+                   # events$event <- paste0('OE', as.character(events$UID))
+                   events$species <- 'unid'
+                   goodEvents <- c('BEAK', 'FORG')
+                   events$species[events$eventType %in% goodEvents] <- str_split(events$comment[events$eventType %in% goodEvents],
+                                                                         ' ', simplify=TRUE)[, 1]
+                   events$species <- tolower(events$species)
+                   events$species[events$species %in% c('mmme', 'mm')] <- 'unid'
+                   events
+               }
+               )))
+               specToAssign <- unique(specDf[specDf$event %in% sapply(acev, id), 'species'])
+               if(length(specToAssign) > 0) {
+                   cat('Assigning unique species: ', paste0(specToAssign, collapse = ', '), '.\n', sep = '')
+               }
+               acev <- setSpecies(acev, method = 'manual', type=type, value = specDf)
+           },
            'reassign' = {
                if(missing(value)) {
-                   warning('"reassign" mode requires a "value" dataframe.')
+                   pamWarning('"reassign" mode requires a "value" dataframe.')
                    return(x)
                }
                colnames(value) <- tolower(colnames(value))
                if(!all(c('old', 'new') %in% colnames(value))) {
-                   warning('Data frame must have columns "old" and "new" to reassign.')
+                   pamWarning('Data frame must have columns "old" and "new" to reassign.')
                    return(x)
                }
                unchanged <- vector('character', length=0)
@@ -194,10 +195,11 @@ setSpecies <- function(x, method=c('pamguard', 'manual', 'reassign'), value, typ
                        'were not in reassignment dataframe, they have not been changed.', sep='')
                }
            },
-           warning('Method ', method, ' not supported.')
+           pamWarning('Method ', method, ' not supported.')
     )
     if(is.AcousticStudy(x)) {
         events(x) <- acev
+        x <- .addPamWarning(x)
         return(x)
     }
     if(is.AcousticEvent(x)) {

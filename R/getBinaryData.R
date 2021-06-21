@@ -7,6 +7,7 @@
 #'   objects, or a single \linkS4class{AcousticEvent} object
 #' @param UID the UID(s) of the individual detections to fetch the binary
 #'   data for
+#' @param type detection type 
 #' @param quiet logical flag to quiet some warnings, used internally and should generally
 #'   not be changed from default \code{FALSE}
 #' @param \dots additional arguments to pass to
@@ -27,7 +28,7 @@
 #' @importFrom PamBinaries loadPamguardBinaryFile
 #' @export
 #'
-getBinaryData <- function(x, UID, quiet=FALSE, ...) {
+getBinaryData <- function(x, UID, type=c('click', 'whistle', 'cepstrum'), quiet=FALSE, ...) {
     if(is.AcousticStudy(x)) {
         x <- events(x)
     }
@@ -42,7 +43,7 @@ getBinaryData <- function(x, UID, quiet=FALSE, ...) {
             warning('Not all inputs were AcousticEvent objects.')
         }
         result <- lapply(x[isAcev], function(y) {
-            getBinaryData(y, UID, quiet=TRUE, ...)
+            getBinaryData(y, UID, type=type, quiet=TRUE, ...)
         })
         names(result) <- NULL
         result <- unlist(result, recursive = FALSE)
@@ -62,12 +63,23 @@ getBinaryData <- function(x, UID, quiet=FALSE, ...) {
         return(NULL)
     }
     # from here we know its an AcEv
+    
     allBinaries <- files(x)$binaries
     # find matching UID from dets
     bins <- bind_rows(
         lapply(detectors(x), function(df) {
             df[df[['UID']] %in% UID, c('UTC', 'UID', 'BinaryFile')]
         }))
+    typeMatch <- vector('character', length=length(type))
+    for(t in seq_along(type)) {
+        typeMatch[t] <- switch(type[t],
+                            'click' = '^Click_Detector_',
+                            'whistle' = '^WhistlesMoans_',
+                            'cepstrum' = '^WhistlesMoans_'
+        )
+    }
+    typeMatch <- paste0(typeMatch, collapse='|')
+    bins <- bins[grepl(typeMatch, bins$BinaryFile), ]
     if(is.null(bins) ||
        nrow(bins) == 0) {
         if(!quiet) {
@@ -79,8 +91,9 @@ getBinaryData <- function(x, UID, quiet=FALSE, ...) {
     # just doing this bec i goofed earlier and some people had data where this
     # never happened in processing. BinaryFile should already be basename
     bins$BinaryFile <- basename(bins$BinaryFile)
-
-    if(length(settings(x)$sr) == 1) {
+    if(!is.null(getSr(x))) {
+        bins$sr <- getSr(x)
+    } else if(length(settings(x)$sr) == 1) {
         bins$sr <- settings(x)$sr
     } else if(length(settings(x)$sr) > 1) {
         trySr <- matchSR(bins, files(x)$db, safe=TRUE)
@@ -109,7 +122,7 @@ getBinaryData <- function(x, UID, quiet=FALSE, ...) {
     # Bins is detector data
     result <- lapply(unique(bins$BinaryFile), function(bin) {
         # this has full path name
-        fullBin <- grep(bin, unique(allBinaries), value = TRUE)
+        fullBin <- grep(bin, unique(allBinaries), value = TRUE, fixed=TRUE)
         if(length(fullBin)==0) {
             warning('Binary file ', bin, ' not found in files slot.', call.=FALSE)
             return(NULL)

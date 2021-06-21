@@ -1,3 +1,184 @@
+## PAMpal 0.13.0
+
+* Added more info to `loadPamguardXML`. Now loads in click sweep classifier type data
+as well as pre-filter and trigger filter data
+
+* `standardClickCalcs` no longer fails if upper end of filter >= to Nyquist
+
+* `processPgDetections` with `mode='time'` can run successfully if no Sound_Acquisition
+table is present by providing columns `db` and `sr` the grouping file (`db` not needed
+if processing a single database)
+
+* `processPgDetections` with `mode='db'` can run successfully if no Sound_Acquisition table
+is present, will ask for sample rate during processing
+
+* Missed some function warnings with new warning system
+
+## PAMpal 0.12.8
+
+* `calculateAverageSpectra` now draws lines breaking up events in concatenated spectrogram
+if plotting multiple events at once
+
+* `plotGram` now uses start and end times based on the start of the event, not the recording
+
+## PAMpal 0.12.7
+
+* `standardClickCalcs` incorrectly had outputs labelled `centerHz_3dB` and `centerHz_10dB`
+when units were actually in kilohertz. Names have been changed to `centerkHz_3dB` and
+`centerkHz_10dB` 
+
+* `calculateAverageSpectra` has a few new features. `plot` can be a vector of lenght two
+specifying which of the two plots to create, useful when only one is desired. New parameters
+`mode` and `decimate` added. `mode` allows users to specify `'spec'`(default) or `'ceps'` to
+calculate either spectrum or cepstrum of signal. `decimate` reduces the samplerate of the 
+signal by an integer factor before calculations, this can be especially useful for 
+cepstrum data.
+
+* Fixed bug in `processPgDetetions` for detection group localiser data crashing with an error
+related to `tarMoCols`, and also updated code to automatically check for event labels. Will look
+for (in order) `Text_Annotation` column, column with `species` in the name, column with `label`
+in the name, or column with `id` in the name. If none of these exist, defaults to the first 
+non-standard column present in the database.
+
+## PAMpal 0.12.6
+
+* `filter` has new special case to filter by detector names
+
+* `processPgDetections` rare bug fix with processing bad event grouping files for
+`mode='time'` and `mode='recording'`
+
+## PAMpal 0.12.5
+
+* `getBinaryData` can now select for detection type, other functions updated to use this
+
+* `filter` works better with species, in particular can do `is.na(species)` now
+
+## PAMpal 0.12.4
+
+* `addHydrophoneDepth` function added that will try to read depth data from a database
+
+* `processPgDetections` for `mode='db'` now adds target motion localizations if they are
+present and stores in the `localizations` slot of events
+
+## PAMpal 0.12.3
+
+* `addRecordings` stores some sample number and samplerate data
+
+* `writeEventClips` has new option `useSample` to try and use the 
+startSample values stored in binary files instead of just UTC times
+
+## PAMpal 0.12.2
+
+* `addRecordings` tries to use to get start sample data from database
+
+* Fixed bug where `processPgDetections` would crash if no comment field was present
+
+## PAMpal 0.12.1
+
+* `calculateICI` error fixed when exactly two detections were present for a detector
+
+* `export_banter` reports names of event level measures it finds
+
+* Switching from using eventUID to event ID for all labeling and `id()` purposes
+
+## PAMpal 0.12.0
+
+* Added ability to work with Pamguard's XML settings files with functions `addSettings`,
+`removeSettings`, and `loadPamguardXML`. Currently this lets `PAMpal` tell if a decimator
+was in use and adjust the sample rate accordingly, no longer need to manually set the
+`sr_hz` parameter for `standardClickCalcs` if XML settings have been added to the `pps`.
+
+* `PAMpalSettings` objects now have a `@settings` slot to accommodate this addition,
+older objects will need to have this slot manually added or they will give warnings
+of `Not a validObject(), no slot of name "settings" for this object of class "PAMpalsettings"`
+
+* Added `updatePamObject` function to deal with updating S4 classes created in older
+versions of `PAMpal`
+
+* Added message on load to warn about updating objects
+
+* Added new warning system that captures warnings during processing and function calls
+and stores them in the `ancillary` slot of the `AcousticStudy` object. These can be
+accessed with the new `getWarnings` function
+
+## PAMpal 0.11.2
+
+* `calculateICI` keeps UID info with the data
+
+## PAMpal 0.11.1
+
+* `calculateAverageSpectra` has a `sort` option to sort clicks by peak frequency
+in the concatenated spectrogram
+
+* `processPgDetections` with `mode='time'` does a better job of parsing sample rates
+from database
+
+## PAMpal 0.11.0
+
+* Added `mode='recording'` to `processPgDetections` that will group events by the 
+start and end times of wav files used
+
+* `processPgDetections` will try to auotmatically determine an appropriate `mode` 
+if none specified
+
+## PAMpal 0.10.6
+
+* `processPgDetections` with `mode='db'` now reads in the comment column
+of the database and stores in the `ancillary()` slot of each event
+
+* `addRecordings` reads in an extra format of dates [0-9]{14}_[0-9]{3}
+
+* Channels for clicks are read in separately from `standardClickCalcs`, now
+these will be saved even if no calc functions are present along with UID and UTC
+
+* `checkStudy` behaves better if run on a study with no events
+
+## PAMpal 0.10.5
+
+* `calculateAverageSpectra` doesn't fail on high SNR values anymore
+
+* `plotWaveform` and friends have a length argument and will now attempt to get
+sample rate values from the `AcousticStudy` object if possible
+
+* `getBinaryData` tries to get sample rate better
+
+* `plotGram` added in preliminary form. Plots spectrograms and cepstrograms of events, can
+also overlay WMD detections onto plot. 
+
+## PAMpal 0.10.4
+
+* `calculateAverageSpectra` - more improvements. Noise shouldnt fail anymore, added SNR
+threshold argument, returns all noise data and UIDs. Output names changed from `all` and
+`average` to `allSpec` and `avgSpec`.
+
+## PAMpal 0.10.3
+
+* `calculateAverageSpectra` has a channel argument, better color scaling for concatenated
+spectrogram, and a beta version of average noise floor
+
+* `processPgDetections` will now automatically use `mode='time'` if a `grouping` argument
+is provided and is either a dataframe or a valid filepath
+
+* `processPgDetections` now properly updates progress bar for `mode='time'` when some
+binary files have no data or are not within any events, previously would not get to 100%
+or would jump
+
+## PAMpal 0.10.2
+
+* `calculateAverageSpectra` now averages in exponential space rather than in
+dB space, and plots are created in separate plotting windows. The `norm` option
+now just scales to a maximum dB value of 0
+
+## PAMpal 0.10.1
+
+* Multiple functions that tried to match files against a list would fail if
+filepaths contained "\\" as file separators, these have been changed to use
+`fixed=TRUE` so that this no longer happens
+
+* Can now set function parameters for functions being adding during the initial
+call to `PAMpalSettings` and `addFunction` instead of being forced to go through
+interactive menus
+
 ## PAMpal 0.9.14
 
 * Cepstrum module can now be named "BurstPulse" or "Burst Pulse" in addition

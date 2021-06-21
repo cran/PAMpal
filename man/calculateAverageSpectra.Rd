@@ -8,24 +8,38 @@ calculateAverageSpectra(
   x,
   evNum = 1,
   calibration = NULL,
-  wl = 1024,
+  wl = 512,
+  channel = 1:2,
   filterfrom_khz = 0,
   filterto_khz = NULL,
   sr = NULL,
+  snr = 0,
   norm = TRUE,
-  plot = TRUE
+  plot = TRUE,
+  noise = FALSE,
+  decimate = 1,
+  sort = FALSE,
+  mode = "spec",
+  label = NULL,
+  ...
 )
 }
 \arguments{
 \item{x}{an \linkS4class{AcousticEvent} or \linkS4class{AcousticStudy} object}
 
-\item{evNum}{if \code{x} is a study, the event number to calculate the average
-spectra for}
+\item{evNum}{if \code{x} is a study, the event index number to calculate the average
+spectra for. Note that this is the index in the order that they appear in the
+\linkS4class{AcousticStudy} object, not the actual event number. Alternatively
+full event names can be used}
 
 \item{calibration}{a calibration function to apply, if desired}
 
 \item{wl}{the size of the click clips to use for calculating the spectrum. If
 greater than the clip present in the binary, clip will be zero padded}
+
+\item{channel}{channel(s) to include in calculations. Currently does not
+correspond to actual channel in instrument, just the order present in the
+binary file}
 
 \item{filterfrom_khz}{frequency in khz of highpass filter to apply, or the lower
 bound of a bandpass filter if \code{filterto_khz} is not \code{NULL}}
@@ -36,21 +50,44 @@ Currently only highpass and bandpass filters are supported, so if
 \code{filterfrom_khz} is left as zero then this parameter will have no effect}
 
 \item{sr}{a sample rate to use if the sample rate present in the database needs
-to be overridden (typically only needed if a decimator was used)}
+to be overridden (typically not needed)}
 
-\item{norm}{logical flag to normalize magnitudes to 0-1 range}
+\item{snr}{minimum signal-to-noise ratio to be included in the average, in dB. SNR is
+calculated as difference between the signal and noise spectra at the peak frequency
+of the signal. This can be inaccurate if noise is inaccurate (see \code{noise} for
+issues with noise calculations)}
 
-\item{plot}{logical flag whether or not to plot the result. The plot will be a
-two panel plot, the top is a concatenated spectrogram where the y-axis is
-frequency and the x-axis is click number. The bottom plot is the average
-spectrogram of all clicks, the y-axis is normalized magnitude (dB values
-for each click are normalized between 0 and 1 before averaging), x-axis
-is frequency.}
+\item{norm}{logical flag to normalize dB magnitude to maximum of 0}
+
+\item{plot}{logical flag whether or not to plot the result. This will create two
+plots, the first is a concatenated spectrogram where the y-axis is
+frequency and the x-axis is click number. The second plot is the average
+spectrogram of all clicks, the y-axis is dB, x-axis is frequency. Can be a
+vector of length two to create only one of the two plots}
+
+\item{noise}{logical flag to plot an average noise spectrum. This is estimated
+by taking a window of length \code{wl} immediately before click. Since there
+are only a limited number of samples saved in the Pamguard binary files, this
+can be very inaccurate when \code{wl} is a large proportion of the total samples
+saved. In these cases the noise floor will appear nearly identical to the signal,
+reducing \code{wl} can help get a more accurate noise floor.}
+
+\item{decimate}{integer factor to reduce sample rate by}
+
+\item{sort}{logical flag to sort concatenated spectrogram by peak frequency}
+
+\item{mode}{one of \code{'spec'} or \code{'ceps'} to plot the spectrum or cepstrum}
+
+\item{label}{optional label before plot titles}
+
+\item{\dots}{optional args}
 }
 \value{
-invisibly returns a list with three items: \code{freq}, the frequency,
-  \code{average}, the average spectra of the event, and \code{all}, the individual
-  spectrum of each click in the event as a matrix.
+invisibly returns a list with six items: \code{freq} - the frequency,
+  \code{UID} - the UID of each click, \code{avgSpec} - the average spectra of the event,
+  \code{allSpec} - the individual spectrum of each click in the event as a matrix with
+  each spectrum in a separate column, \code{avgNoise} - the average noise spectra,
+  \code{allNoise} - the individual noise spectrum for each click
 }
 \description{
 Calculates the average spectra of all the clicks present in an
@@ -64,9 +101,9 @@ binUpd <- system.file('extdata', 'Binaries', package='PAMpal')
 dbUpd <- system.file('extdata', package='PAMpal')
 exStudy <- updateFiles(exStudy, bin = binUpd, db=dbUpd)
 avSpec <- calculateAverageSpectra(exStudy)
-str(avSpec$average)
+str(avSpec$avgSpec)
 range(avSpec$freq)
-str(avSpec$all)
+str(avSpec$allSpec)
 
 }
 \author{

@@ -93,6 +93,29 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
             wavMap <- dbMap[[min(which(folder == folder[d]))]]
         } else {
             wavMap <- mapWavFolder(folder[d], log=logList[[as.character(log[d])]], progress)
+            # Try to do start sample
+            if(!is.null(wavMap)) {
+                if(!file.exists(names(dbMap)[d])) {
+                    pamWarning('Database ', names(dbMap)[d], ' could not be found, "startSample"',
+                               ' cannot be set.')
+                    wavMap$startSample <- NA
+                } else {
+                    sa <- readSa(names(dbMap)[d])
+                    wavCol <- findWavCol(sa)
+                    wavMap$startSample <- NA
+                    if(!is.na(wavCol)) {
+                        for(w in seq_along(wavMap$file)) {
+                            thisWav <- grep(substr(basename(wavMap$file[w]), 1, 49), sa[[wavCol]])
+                            if(length(thisWav) == 0) next
+                            thisSa <- sa[thisWav, ]
+                            if(any(thisSa$Status == 'Start')) {
+                                wavMap$startSample[w] <- 1
+                            }
+                        }
+                    }
+                }
+            }
+            
             isMapped <- c(isMapped, folder[d])
         }
         dbMap[[d]] <- wavMap
@@ -105,6 +128,13 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
     allFiles <- bind_rows(lapply(split(allFiles, allFiles$db), function(x) {
         checkConsecutive(x)
     }))
+    allFiles <- bind_rows(lapply(split(allFiles, allFiles$fileGroup), function(x) {
+        if(!is.na(x$startSample[1]) &&
+           nrow(x) > 1) {
+            x$startSample[2:nrow(x)] <- cumsum(x$sampleLength[1:(nrow(x)-1)])
+        }
+        x
+    }))
     files(x)$recordings <- allFiles
     # for(e in seq_along(events(x))) {
     #     thisFiles <- dbMap[[files(x[[e]])$db]]
@@ -116,6 +146,9 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
     #     )
     #     files(x[[e]])$recordings <- checkConsecutive(files(x[[e]])$recordings)
     # }
+    files(x)$recordings$numStart <- as.numeric(files(x)$recordings$start)
+    files(x)$recordings$numEnd <- as.numeric(files(x)$recordings$end)
+    x <- .addPamWarning(x)
     x
 }
 
@@ -125,22 +158,22 @@ mapWavFolder <- function(wavFolder=NULL, log=NULL, progress=TRUE) {
                                    default = getwd())
     }
     if(is.na(wavFolder)) {
-        return(FALSE)
+        return(NULL)
     }
     if(!dir.exists(wavFolder)) {
-        warning('Provided folder ', wavFolder, ' does not exist.')
-        return(FALSE)
+        pamWarning('Provided folder ', wavFolder, ' does not exist.')
+        return(NULL)
     }
 
     wavs <- list.files(wavFolder, full.names=TRUE, pattern = '\\.wav$', recursive=TRUE)
     if(length(wavs) == 0) {
-        warning('No wav files found in folder ', wavFolder, call.=FALSE)
-        return(FALSE)
+        pamWarning('No wav files found in folder ', wavFolder)
+        return(NULL)
     }
     wavMap <- wavsToRanges(wavs, log, progress)
     if(is.null(wavMap) ||
        nrow(wavMap) == 0) {
-        return(FALSE)
+        return(NULL)
     }
     wavMap <- checkConsecutive(wavMap)
     wavMap <- arrange(wavMap, .data$start)
@@ -162,7 +195,8 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
             return(NULL)
         }
         len <- header$samples / header$sample.rate
-        format <- c(FOUNDFORMAT, c('pamguard', 'soundtrap', 'sm3'))
+        sampleLength <- header$samples
+        format <- c(FOUNDFORMAT, c('pamguard', 'pampal', 'soundtrap', 'sm3'))
         for(f in format) {
             switch(
                 f,
@@ -171,6 +205,16 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
                     posix <- as.POSIXct(substr(date, 1, 15), tz = 'UTC', format = '%Y%m%d_%H%M%S')
                     if(is.na(posix)) next
                     millis <- as.numeric(substr(date, 17, 19)) / 1e3
+                    if(!is.na(posix)) {
+                        FOUNDFORMAT <<- f
+                        break
+                    }
+                },
+                'pampal' = {
+                    date <- gsub('.*([0-9]{14}_[0-9]{3})\\.wav$', '\\1', x)
+                    posix <- as.POSIXct(substr(date, 1, 14), tz = 'UTC', format = '%Y%m%d%H%M%S')
+                    if(is.na(posix)) next
+                    millis <- as.numeric(substr(date, 16, 18)) / 1e3
                     if(!is.na(posix)) {
                         FOUNDFORMAT <<- f
                         break
@@ -201,14 +245,15 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
             wix <<- wix + 1
         }
         if(is.na(posix)) {
-            warning('Could not convert the name of the wav file ',
-                    x, ' to time properly.', call. = FALSE)
+            pamWarning('Could not convert the name of the wav file ',
+                    x, ' to time properly.')
             return(NULL)
         }
         if(FOUNDFORMAT == 'soundtrap') {
             hasLog <- which(gsub('\\.wav$', '', basename(x)) == log$file)
             if(length(hasLog) == 1) {
                 len <- len + log$gap[hasLog]
+                sampleLength <- sampleLength + log$gap[hasLog] * header$sample.rate
             }
         }
         rng <- c(0, len) + posix + millis
@@ -216,10 +261,10 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
             return(NULL)
         }
 
-        list(start=rng[1], end=rng[2], file=x, length=len)
+        list(start=rng[1], end=rng[2], file=x, length=len, sampleLength = sampleLength, sr=header$sample.rate)
     }))
     if(length(badWav) > 0) {
-        warning('Unable to read wav files ', printN(badWav, 6), ' these are possibly corrupt.')
+        pamWarning('Unable to read wav files ', badWav, ' these are possibly corrupt.', n=6)
     }
     wavMap
 }
@@ -235,7 +280,7 @@ getSoundtrapLog <- function(log) {
         return(data.frame(gap=0, sample=1, file='DNE'))
     }
     if(!dir.exists(log)) {
-        warning('Log folder ', log, ' does not exist.', call.=FALSE)
+        pamWarning('Log folder ', log, ' does not exist.')
         return(data.frame(gap=0, sample=1, file='DNE'))
     }
 
