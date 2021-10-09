@@ -35,7 +35,7 @@
 #' @importFrom tcltk tk_choose.dir
 #' @export
 #'
-addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
+addRecordings <- function(x, folder=NULL, log=FALSE, progress=TRUE) {
     dbMap <- vector('list', length = length(files(x)$db))
     names(dbMap) <- files(x)$db
     if(is.null(log)) {
@@ -98,12 +98,12 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
                 if(!file.exists(names(dbMap)[d])) {
                     pamWarning('Database ', names(dbMap)[d], ' could not be found, "startSample"',
                                ' cannot be set.')
-                    wavMap$startSample <- NA
+                    wavMap$startSample <- 1
                 } else {
                     sa <- readSa(names(dbMap)[d])
                     wavCol <- findWavCol(sa)
-                    wavMap$startSample <- NA
                     if(!is.na(wavCol)) {
+                        wavMap$startSample <- NA
                         for(w in seq_along(wavMap$file)) {
                             thisWav <- grep(substr(basename(wavMap$file[w]), 1, 49), sa[[wavCol]])
                             if(length(thisWav) == 0) next
@@ -112,6 +112,8 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
                                 wavMap$startSample[w] <- 1
                             }
                         }
+                    } else {
+                        wavMap$startSample <- 1
                     }
                 }
             }
@@ -130,7 +132,8 @@ addRecordings <- function(x, folder=NULL, log=NULL, progress=TRUE) {
     }))
     allFiles <- bind_rows(lapply(split(allFiles, allFiles$fileGroup), function(x) {
         if(!is.na(x$startSample[1]) &&
-           nrow(x) > 1) {
+           nrow(x) > 1 &&
+           all(is.na(x$startSample[2:nrow(x)]))) {
             x$startSample[2:nrow(x)] <- cumsum(x$sampleLength[1:(nrow(x)-1)])
         }
         x
@@ -164,7 +167,7 @@ mapWavFolder <- function(wavFolder=NULL, log=NULL, progress=TRUE) {
         pamWarning('Provided folder ', wavFolder, ' does not exist.')
         return(NULL)
     }
-
+    wavFolder <- normalizePath(wavFolder)
     wavs <- list.files(wavFolder, full.names=TRUE, pattern = '\\.wav$', recursive=TRUE)
     if(length(wavs) == 0) {
         pamWarning('No wav files found in folder ', wavFolder)
@@ -196,7 +199,7 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
         }
         len <- header$samples / header$sample.rate
         sampleLength <- header$samples
-        format <- c(FOUNDFORMAT, c('pamguard', 'pampal', 'soundtrap', 'sm3'))
+        format <- c(FOUNDFORMAT, c('pamguard', 'pampal', 'soundtrap', 'sm3', 'icListens1', 'icListens2'))
         for(f in format) {
             switch(
                 f,
@@ -232,6 +235,24 @@ wavsToRanges <- function(wav, log, progress=TRUE) {
                 'sm3' = {
                     date <- gsub('.*\\_([0-9]{8}_[0-9]{6})\\.wav$', '\\1', x)
                     posix <- as.POSIXct(date, format = '%Y%m%d_%H%M%S', tz='UTC')
+                    millis <- 0
+                    if(!is.na(posix)) {
+                        FOUNDFORMAT <<- f
+                        break
+                    }
+                },
+                'icListens1' = {
+                    date <- gsub('.*_([0-9]{8}-[0-9]{6})\\.wav$', '\\1', x)
+                    posix <- as.POSIXct(date, format = '%Y%m%d-%H%M%S', tz='UTC')
+                    millis <- 0
+                    if(!is.na(posix)) {
+                        FOUNDFORMAT <<- f
+                        break
+                    }
+                },
+                'icListens2' = {
+                    date <- gsub('.*_([0-9]{6}-[0-9]{6})\\.wav$', '\\1', x)
+                    posix <- as.POSIXct(date, format = '%y%m%d-%H%M%S', tz='UTC')
                     millis <- 0
                     if(!is.na(posix)) {
                         FOUNDFORMAT <<- f
