@@ -28,7 +28,7 @@
 #' @importFrom PamBinaries loadPamguardBinaryFile
 #' @export
 #'
-getBinaryData <- function(x, UID, type=c('click', 'whistle', 'cepstrum'), quiet=FALSE, ...) {
+getBinaryData <- function(x, UID, type=c('click', 'whistle', 'cepstrum', 'gpl'), quiet=FALSE, ...) {
     # if(is.AcousticStudy(x)) {
     #     x <- events(x)
     # }
@@ -75,9 +75,10 @@ getBinaryData <- function(x, UID, type=c('click', 'whistle', 'cepstrum'), quiet=
     typeMatch <- vector('character', length=length(type))
     for(t in seq_along(type)) {
         typeMatch[t] <- switch(type[t],
-                            'click' = '^Click_Detector_',
+                            'click' = '^Click_Detector_|^SoundTrap_Click_Detector_',
                             'whistle' = '^WhistlesMoans_',
-                            'cepstrum' = '^WhistlesMoans_'
+                            'cepstrum' = '^WhistlesMoans_',
+                            'gpl' = '^GPL_Detector_'
         )
     }
     typeMatch <- paste0(typeMatch, collapse='|')

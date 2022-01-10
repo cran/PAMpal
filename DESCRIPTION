@@ -1,7 +1,7 @@
 Package: PAMpal
 Type: Package
 Title: Load and Process Passive Acoustic Data
-Version: 0.14.4
+Version: 0.15.0
 Authors@R: c(
   TS = person("Taiki", "Sakai", email = "taiki.sakai@noaa.gov", role = c("aut", "cre")),
   JB = person("Jay", "Barlow", role = c("ctb")),
@@ -19,14 +19,14 @@ Description: Tools for loading and processing passive acoustic data. Read in dat
 License: GNU General Public License
 Encoding: UTF-8
 LazyData: true
-Depends: R (>= 3.5.0), PamBinaries (>= 1.3.0), dplyr, tuneR
-Imports: seewave, gam, data.table, PAMmisc, RSQLite, stringr, purrr,
-        methods, magrittr, signal, readr, tidyr, ggplot2, manipulate,
-        knitr, rstudioapi, xml2, rjson, rlang, reticulate, lubridate
-RoxygenNote: 7.1.1
+Depends: R (>= 3.5.0), PamBinaries (>= 1.3.0), dplyr
+Imports: tuneR, seewave, gam, data.table, PAMmisc, RSQLite, stringr,
+        purrr, methods, signal, tidyr, ggplot2, manipulate, knitr,
+        rstudioapi, xml2, rlang, reticulate, lubridate
+RoxygenNote: 7.1.2
 Suggests: testthat
 NeedsCompilation: no
-Packaged: 2021-10-08 23:42:58 UTC; tnsak
+Packaged: 2022-01-10 22:14:31 UTC; tnsak
 Author: Taiki Sakai [aut, cre],
   Jay Barlow [ctb],
   Emily Griffiths [ctb],
@@ -34,4 +34,4 @@ Author: Taiki Sakai [aut, cre],
   Simone Baumann-Pickering [ctb],
   Julie Oswald [ctb]
 Repository: CRAN
-Date/Publication: 2021-10-09 21:10:26 UTC
+Date/Publication: 2022-01-10 22:42:42 UTC

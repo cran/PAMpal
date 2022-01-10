@@ -13,7 +13,7 @@ NULL
 #' @name testClick
 #' @title A two-channel recording of a delphinid click
 #' @description An example delphinid click waveform. This is a two-channel recording
-#' of some kind of delphinid click, recorded at 192kHz. There are
+#' of some kind of delphinid click, recorded at 500kHz There are
 #' 800 samples recorded on each channel.
 #' @usage data(testClick)
 #' @format A list with two items:
@@ -50,6 +50,20 @@ NULL
 #'   \item{quefrency}{a vector of the cepstrum contour bin numbers, not actually quefrency}
 #'   \item{time}{a vector of the time values of the cepsturm contour in seconds}
 #'   \item{sr}{the sample rate of the recording}
+#' }
+#' @keywords datasets
+NULL
+
+#' @docType data
+#' @name testGPL
+#' @title A fake GPL detection
+#' @description A manually created fake GPL contour, mimicing what the output
+#'   would be from the Pamguard module and fed into the GPL calcs
+#' @usage data(testGPL)
+#' @format A list with three items:
+#' \describe{
+#'   \item{freq}{a vector of the frequency contour values in hertz}
+#'   \item{time}{a vector of the time values of the contour in seconds}
 #' }
 #' @keywords datasets
 NULL
