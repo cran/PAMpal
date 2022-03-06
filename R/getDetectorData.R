@@ -6,6 +6,9 @@
 #'
 #' @param x data to extract detector data from, either an \code{AcousticStudy},
 #'   \code{AcousticEvent} or list of \code{AcousticEvent} object
+#' @param measures logical flag whether or not to append measures to detector
+#'   dataframes
+#' @param distinct logical flag to only return number of distinct click detections
 #'
 #' @details The purpose of this function is to extract your data out of
 #'   \code{PAMpal}'s S4 classes and put them into an easier format to work with.
@@ -34,7 +37,7 @@
 #' @importFrom PAMmisc squishList
 #' @export
 #'
-getDetectorData <- function(x) {
+getDetectorData <- function(x, measures=TRUE) {
     if(is.data.frame(x)) {
         return(x)
     }
@@ -55,6 +58,7 @@ getDetectorData <- function(x) {
     # base case one acev
     dets <- detectors(x)
     callTypes <- getCallType(dets)
+    meas <- ancillary(x)$measures
     for(d in seq_along(dets)) {
         dets[[d]]$eventId <- id(x)
         dets[[d]]$detectorName <- names(dets)[d]
@@ -63,6 +67,12 @@ getDetectorData <- function(x) {
             dets[[d]]$species <- NA_character_
         } else {
             dets[[d]]$species <- species(x)$id[1]
+        }
+        if(isTRUE(measures) &&
+           !is.null(meas)) {
+            for(m in names(meas)) {
+                dets[[d]][[m]] <- meas[[m]]
+            }
         }
     }
     names(dets) <- callTypes
@@ -91,34 +101,34 @@ getCallType <- function(x) {
 #' @export
 #' @rdname getDetectorData
 #'
-getClickData <- function(x) {
+getClickData <- function(x, measures=TRUE) {
     getDetectorData(x)$click
 }
 
 #' @export
 #' @rdname getDetectorData
 #'
-getWhistleData <- function(x) {
+getWhistleData <- function(x, measures=TRUE) {
     getDetectorData(x)$whistle
 }
 
 #' @export
 #' @rdname getDetectorData
 #'
-getCepstrumData <- function(x) {
+getCepstrumData <- function(x, measures=TRUE) {
     getDetectorData(x)$cepstrum
 }
 
 #' @export
 #' @rdname getDetectorData
-#' 
-getGPLData <- function(x) {
+#'
+getGPLData <- function(x, measures=TRUE) {
     getDetectorData(x)$gpl
 }
 
 #' @export
 #' @rdname getDetectorData
-#' 
+#'
 getMeasures <- function(x) {
     if(is.data.frame(x)) {
         return(x)
@@ -139,4 +149,61 @@ getMeasures <- function(x) {
     }
     # base case one acev
     c(id=id(x), ancillary(x)$measures)
+}
+
+#' @export
+#' @rdname getDetectorData
+#'
+nDetections <- function(x, distinct=FALSE) {
+    sum(c(nClicks(x, distinct),
+          nWhistles(x),
+          nCepstrum(x),
+          nGPL(x)))
+}
+
+#' @export
+#' @rdname getDetectorData
+#'
+nClicks <- function(x, distinct=FALSE) {
+    dets <- getClickData(x)
+    if(is.null(dets)) {
+        return(0L)
+    }
+    if(distinct) {
+        return(length(unique(dets$UID)))
+    }
+    nrow(dets)
+}
+
+#' @export
+#' @rdname getDetectorData
+#'
+nWhistles <- function(x) {
+    dets <- getWhistleData(x)
+    if(is.null(dets)) {
+        return(0L)
+    }
+    nrow(dets)
+}
+
+#' @export
+#' @rdname getDetectorData
+#'
+nCepstrum <- function(x) {
+    dets <- getCepstrumData(x)
+    if(is.null(dets)) {
+        return(0L)
+    }
+    nrow(dets)
+}
+
+#' @export
+#' @rdname getDetectorData
+#'
+nGPL <- function(x) {
+    dets <- getGPLData(x)
+    if(is.null(dets)) {
+        return(0L)
+    }
+    nrow(dets)
 }

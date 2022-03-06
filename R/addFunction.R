@@ -8,7 +8,7 @@
 #' @param fun function to add OR another \linkS4class{PAMpalSettings} object.
 #'   In this case all functions from the second object will be added to \code{pps}
 #' @param module Pamguard module output this function should act on, one of
-#'   ClickDetector, WhistlesMoans, or Cepstrum. If \code{NULL} (default), user
+#'   ClickDetector, WhistlesMoans, Cepstrum, or GPLDetector. If \code{NULL} (default), user
 #'   will be prompted to select which module it applies to
 #' @param verbose logical flag to show messages
 #' @param \dots named arguments to pass to function being added
@@ -40,7 +40,11 @@ addFunction <- function(pps, fun, module=NULL, verbose = TRUE, ...) {
         }
         return(pps)
     }
-    fname <- deparse(substitute(fun))
+    if(is.null(attr(fun, 'fname'))) {
+        fname <- deparse(substitute(fun))
+    } else {
+        fname <- attr(fun, 'fname')
+    }
     if(is.null(module) ||
        !(module %in% modsAllowed)) {
         chooseMod <- menu(choices = modsAllowed,
@@ -76,11 +80,11 @@ functionParser <- function(fun, skipArgs = c('data', 'calibration', '...'), ...)
     if(length(toSet) > 0) {
         for(a in toSet) {
             cat('Set a value for parameter "', a, '", please put quotes around strings', sep='')
-            if(class(argList[[a]]) == 'name') {
+            if(inherits(argList[[a]], 'name')) {
                 cat(' (no default value found):')
-            } else if(class(argList[[a]]) == 'NULL') {
+            } else if(inherits(argList[[a]], 'NULL')) {
                 cat(' (default value is NULL):')
-            } else if(class(argList[[a]]) == 'call') {
+            } else if(inherits(argList[[a]], 'call')) {
                 cat(' (default value is ', deparse(argList[[a]]), '):', sep='')
             } else {
                 cat(' (default value is ', argList[[a]], '):', sep = '')
@@ -178,7 +182,7 @@ cepstrumChecker <- function(fun) {
 gplChecker <- function(fun) {
     good <- TRUE
     testThisGpl <- try(fun(data=PAMpal::testGPL))
-    
+
     if(inherits(testThisGpl, 'try-error')) {
         message('GPL function did not run successfully.')
         message('Error: ', attr(testThisGpl, 'condition')$message)
@@ -193,4 +197,4 @@ gplChecker <- function(fun) {
         return(FALSE)
     }
     good
-}    
+}

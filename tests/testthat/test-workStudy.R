@@ -53,9 +53,12 @@ test_that('Test working with AcousticStudy object', {
         is.na(ancillary(exData[[1]])$ici[[2]]$ici)
     ))
     expect_true(all(c('Click_Detector_1_ici', 'All_ici') %in% names(ancillary(exData[[1]])$measures)))
+    expect_true(all(c('Click_Detector_1_ici', 'All_ici') %in% names(getMeasures(exData[[1]]))))
+    expect_true(all(c('Click_Detector_1_ici', 'All_ici') %in% names(getClickData(exData[[1]]))))
     iciData <- getICI(exData, 'data')
-    expect_true(all(c('Click_Detector_1', 'All') %in% names(iciData[[1]])))
-    expect_identical(names(iciData), names(events(exData)))
+    expect_true(all(c('Click_Detector_1', 'All') %in% iciData$detectorName))
+    # expect_identical(names(iciData), names(events(exData)))
+    expect_true(all(names(events(exData)) %in% iciData$eventId))
     iciData <- getICI(exData, 'value')
     expect_true(all(c('Click_Detector_1_ici', 'All_ici') %in% names(iciData[[1]])))
 
@@ -101,7 +104,7 @@ test_that('Test working with AcousticStudy object', {
     expect_identical(normalizePath(files(exData)$recordings$file),
                      normalizePath(list.files(recs, full.names = TRUE)))
     expect_warning(warnRec <- addRecordings(exData, folder = 'DNE', log=FALSE, progress=FALSE))
-    
+
     # test warning access from recorder warning
     warns <- getWarnings(warnRec)
     expect_is(warns, 'data.frame')
@@ -177,6 +180,11 @@ test_that('Test getDetectorData', {
     expect_identical(dets$click, getClickData(exStudy))
     expect_identical(dets$whistle, getWhistleData(exStudy))
     expect_identical(dets$cepstrum, getCepstrumData(exStudy))
+    expect_equal(nDetections(exStudy), 28L)
+    expect_equal(nClicks(exStudy), 4L)
+    expect_equal(nWhistles(exStudy), 14L)
+    expect_equal(nCepstrum(exStudy), 10L)
+    expect_equal(nGPL(exStudy), 0L)
 })
 
 test_that('Test updateFiles', {
@@ -206,4 +214,12 @@ test_that('Test updateFiles', {
     expect_true(!any(file.exists(files(exStudy)$recordings$file)))
     exStudy <- updateFiles(exStudy, recording=recs, verbose=FALSE)
     expect_true(all(file.exists(files(exStudy)$recordings$file)))
+})
+
+test_that('Test bindStudies', {
+    data(exStudy)
+    expect_warning(bind2 <- bindStudies(exStudy, exStudy), 'Duplicate names')
+    expect_equal(nClicks(exStudy)*2, nClicks(bind2))
+    bind2list <- expect_warning(bindStudies(list(exStudy, exStudy)))
+    expect_equal(nClicks(exStudy)*2, nClicks(bind2list))
 })

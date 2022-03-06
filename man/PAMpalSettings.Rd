@@ -8,17 +8,20 @@ PAMpalSettings(
   db = NULL,
   binaries = NULL,
   settings = NULL,
+  functions = NULL,
   verbose = TRUE,
   ...
 )
 }
 \arguments{
-\item{db}{the full path to a Pamguard database file}
+\item{db}{the full path to a Pamguard database file or folder of databases}
 
 \item{binaries}{a folder containing Pamguard binary files, all subfolders will
 also be added}
 
 \item{settings}{an XML settings file from Pamguard}
+
+\item{functions}{a named list of additional functions to add}
 
 \item{verbose}{logical flag to show messages}
 

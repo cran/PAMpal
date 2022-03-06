@@ -1,3 +1,49 @@
+## PAMpal 0.16.0
+
+* `addDatabase` can now accept a folder containing databases
+
+* cepstrum calculations handled better internally
+
+* Detection Group Localiser had changed in PAMGuard - reworked code to work with new
+naming scheme and fail less often if some tables are missing
+
+* `filter` has more regular behavior - no longer returns `NULL` if no detections
+are present, was previously causing odd behavior in loops
+
+* Event order is now preserved when doing `mode='time'`
+
+* Added functions `nDetections`, `nClicks`, `nWhistles`, `nCepstrum`, `nGPL` that 
+get total number of detections in an event or study
+
+* `getICI` for `type='data'` returns one big dataframe instead of lists of lists of dataframes
+
+* Added `showBreaks` option to `calculateAverageSpectra` to toggle showing line breaks for 
+multiple events in concatenated spectrogram
+
+* Added `bindStudies` function to combine multiple `AcousticStudy` objects
+
+## PAMpal 0.15.3
+
+* Trying to stabilize processing against minor errors - should no longer crash entire processing
+if one piece of binary data fails, will try again instead
+
+* Trying to fix some crashes with missing Sound Acquisition data
+
+## PAMpal 0.15.2
+
+* Bug with `mode='time'` where sample rate could be read in as a character, causing crashes
+
+* `calculateAverageSpectra` would have problems when doing multiple events that had detections
+with repeated UIDs
+
+* `matchEnvData` now has a `depth` parameter to specify depth or range of depths to match
+
+* Store and print total processing time for `processPgDetections`
+
+## PAMpal 0.15.1
+
+* Added ability to add functions during `PAMpalSettings` call
+
 ## PAMpal 0.15.0
 
 * Added support for GPL Detector data!
