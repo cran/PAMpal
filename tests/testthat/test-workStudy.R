@@ -14,7 +14,7 @@ test_that('Test working with AcousticStudy object', {
     exData <- processPgDetections(exPps, mode='db', id='Example', progress = FALSE, verbose = FALSE)
 
     # check adding gps
-    exData <- addGps(exData)
+    exData <- addGps(exData, thresh=365*24*3600)
     expect_equal(nrow(gps(exData)), 200)
     expect_true(!any(
         is.na(gps(exData)[['Latitude']])
@@ -40,7 +40,13 @@ test_that('Test working with AcousticStudy object', {
     expect_true(!any(
         is.na(exData[[1]][[3]][['Longitude']])
     ))
-
+    gps <- data.frame(Latitude = 32, Longitude=-118, UTC = as.POSIXct('2020-01-30 00:00:00', tz='UTC'))
+    expect_warning(addGps(exData, gps=gps, thresh=3600),
+                   'Some GPS coordinate matches exceeded')
+    exData <- addGps(exData, gps=gps, thresh=Inf)
+    expect_equal(nrow(gps(exData)), 1)
+    expect_equal(getClickData(exData)$Latitude[1], 32)
+    # add gps from DF
     # check ici
     expect_warning(iciData <- getICI(exData), 'No ICI data')
     expect_null(iciData)
@@ -116,34 +122,42 @@ test_that('Test filter', {
     data(exStudy)
     # test filtering
     filterNone <- filter(exStudy, VARDNE == 'DNE')
-    expect_identical(events(exStudy), events(filterNone))
+    # expect_identical(events(exStudy), events(filterNone))
+    expect_true(checkSameDetections(exStudy, filterNone))
     exStudy <- setSpecies(exStudy, method='manual', value=letters[1:2])
     spFilter <- filter(exStudy, species == 'a')
     expect_equal(length(events(spFilter)), 1)
     expect_equal(species(spFilter[[1]])$id, 'a')
     spFilter <- filter(exStudy, species %in% letters[1:3])
-    expect_identical(events(spFilter), events(exStudy))
+    # expect_identical(events(spFilter), events(exStudy))
+    expect_true(checkSameDetections(spFilter, exStudy))
     peakFilter <- filter(exStudy, peak < 20)
     expect_true(all(detectors(peakFilter)$click$peak < 20))
     peakFilter <- filter(exStudy, peak < 2000)
-    events(peakFilter) <- lapply(events(peakFilter), function(x) {
-        detectors(x) <- lapply(detectors(x), function(y) {
-            row.names(y) <- NULL
-            y
-        })
-        x
-    })
-    events(exStudy) <- lapply(events(exStudy), function(x) {
-        detectors(x) <- lapply(detectors(x), function(y) {
-            row.names(y) <- NULL
-            y
-        })
-        x
-    })
-    expect_identical(events(peakFilter), events(exStudy))
+    # events(peakFilter) <- lapply(events(peakFilter), function(x) {
+    #     detectors(x) <- lapply(detectors(x), function(y) {
+    #         row.names(y) <- NULL
+    #         y
+    #     })
+    #     x
+    # })
+    # events(exStudy) <- lapply(events(exStudy), function(x) {
+    #     detectors(x) <- lapply(detectors(x), function(y) {
+    #         row.names(y) <- NULL
+    #         y
+    #     })
+    #     x
+    # })
+    # expect_identical(events(peakFilter), events(exStudy))
+    expect_warning(filter(exStudy, detector == 'Click_Detector_1'))
+    detFilter <- filter(exStudy, detectorName == 'Cepstrum_Detector')
+    expect_equal(nClicks(detFilter), 0)
+    expect_equal(getCepstrumData(exStudy), getCepstrumData(detFilter))
+    expect_true(checkSameDetections(peakFilter, exStudy))
 
     dbFilter <- filter(exStudy, database == files(exStudy)$db)
-    expect_identical(events(exStudy), events(dbFilter))
+    # expect_identical(events(exStudy), events(dbFilter))
+    expect_true(checkSameDetections(exStudy, dbFilter))
     dbNone <- filter(exStudy, database == 'NODB.sqlite3')
     expect_equal(length(events(dbNone)), 0)
 })
@@ -222,4 +236,12 @@ test_that('Test bindStudies', {
     expect_equal(nClicks(exStudy)*2, nClicks(bind2))
     bind2list <- expect_warning(bindStudies(list(exStudy, exStudy)))
     expect_equal(nClicks(exStudy)*2, nClicks(bind2list))
+})
+
+test_that('Test hydrophone depth', {
+    data(exStudy)
+    exStudy <- addHydrophoneDepth(exStudy, depth=10)
+    clicks <- getClickData(exStudy)
+    expect_true('hpDepth' %in% colnames(clicks))
+    expect_equal(10, clicks$hpDepth[1])
 })

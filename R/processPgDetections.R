@@ -96,7 +96,8 @@
 #' @export
 #'
 processPgDetections <- function(pps, mode = c('db', 'time', 'recording'), id=NULL, grouping=NULL,
-                                format='%Y-%m-%d %H:%M:%OS', progress=TRUE, verbose=TRUE, ...) {
+                                format=c('%m/%d/%Y %H:%M:%OS', '%m-%d-%Y %H:%M:%OS',
+                                         '%Y/%m/%d %H:%M:%OS', '%Y-%m-%d %H:%M:%OS'), progress=TRUE, verbose=TRUE, ...) {
     # auto check for mode
     if(missing(mode)) {
         mode <- autoMode(pps, grouping)
@@ -122,6 +123,18 @@ processPgDetections <- function(pps, mode = c('db', 'time', 'recording'), id=NUL
         stop(paste0(pps, ' is not a PAMpalSettings object. Please create one with',
                     ' function "PAMpalSettings()"'), call.=FALSE)
     }
+    nDb <- length(pps@db)
+    if(nDb == 0) {
+        warning('No database(s) found in PAMpalSettings object.')
+    }
+    nBin <- length(pps@binaries$list)
+    if(nBin == 0) {
+        warning('No binary files found in PAMpalSettings object.')
+    }
+    if(nDb == 0 ||
+       nBin == 0) {
+        stop('Add with "addDatabase" or "addBinaries", or create a new PAMpalSettings object to continue processing.')
+    }
     startTime <- Sys.time()
     result <- switch(mode,
                      'db' = processPgDb(pps=pps, grouping=grouping, id=id,
@@ -143,6 +156,12 @@ processPgDetections <- function(pps, mode = c('db', 'time', 'recording'), id=NUL
     )
     checkStudy(result)
     result <- .addPamWarning(result)
+    nWarns <- nrow(getWarnings(result))
+    if(!is.null(nWarns) && nWarns > 0) {
+        result <- addNote(result, 'study', 'Processing Warnings',
+                          note = paste0('There were ', nWarns, ' warnings during processing,',
+                                        ' use "getWarnings(x)" to see them.'))
+    }
     endTime <- Sys.time()
     procTime <- round(as.numeric(difftime(endTime, startTime, units='secs')), 0)
     ancillary(result)$processingTime <- procTime
@@ -401,7 +420,7 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
     }
     binData <- binData[sapply(binData, function(x) !is.null(x))]
     if(length(binData) == 0) {
-        stop(paste0('None of the binary files contained data for any of the events.',
+        warning(paste0('None of the binary files contained data for any of the events.',
                     ' Please check that times are in UTC and the correct binary folder was supplied.'), call.=FALSE)
     }
     # for clicks we have split the broad detector into separate ones by classification
@@ -423,7 +442,14 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
             data
         })
         # Check possible DBs by start/end time of events in sa list earlier
-        thisData <- thisData[sapply(thisData, function(x) !is.null(x))]
+        hasDat <- sapply(thisData, function(x) !is.null(x))
+        # looks unnecessary but subset breaks if thisData is already list()
+        if(!any(hasDat)) {
+            thisData <- list()
+        } else {
+            thisData <- thisData[hasDat]
+        }
+        # thisData <- thisData[sapply(thisData, function(x) !is.null(x))]
         binariesUsed <- lapply(thisData, function(x) unique(x$BinaryFile)) %>%
             unlist(recursive = FALSE) %>% unique()
         # binariesUsed <- unlist(sapply(binariesUsed, function(x) grep(x, binList, value=TRUE), USE.NAMES = FALSE))
@@ -439,20 +465,20 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
             x
         })
         thisSr <- grouping$sr[[i]]
-        if(is.na(grouping$db[i])) {
-            thisSource <- 'Not Found'
-        } else {
-            filtSa <- saList[[grouping$db[i]]]
-            if(is.null(filtSa)) {
-                thisSource <- 'Not Found'
-            } else {
-                filtSa <- filter(filtSa, filtSa$UTC <= grouping$end[i], filtSa$UTC >= grouping$start[i])
-                thisSource <- unique(filtSa$SystemType)
-            }
-        }
+        # if(is.na(grouping$db[i])) {
+        #     thisSource <- 'Not Found'
+        # } else {
+        #     filtSa <- saList[[grouping$db[i]]]
+        #     if(is.null(filtSa)) {
+        #         thisSource <- 'Not Found'
+        #     } else {
+        #         filtSa <- filter(filtSa, filtSa$UTC <= grouping$end[i], filtSa$UTC >= grouping$start[i])
+        #         thisSource <- unique(filtSa$SystemType)
+        #     }
+        # }
         thisDb <- allDbs[grepl(basename(grouping$db[i]), allDbs)]
         acousticEvents[[i]] <-
-            AcousticEvent(id=evName[i], detectors = thisData, settings = list(sr = thisSr, source = thisSource),
+            AcousticEvent(id=evName[i], detectors = thisData, settings = list(sr = thisSr),# source = thisSource),
                           files = list(binaries=binariesUsed, db=thisDb, calibration=calibrationUsed))
         ancillary(acousticEvents[[i]])$grouping <- grouping[i, ]
     }
@@ -525,8 +551,9 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup'), id=NULL,
                 pamWarning('More than 1 sample rate found in database ',
                         basename(db),'.')
             }
-            thisSource <- unique(dbData$SystemType)
-            dbData <- select(dbData, -.data$SystemType)
+            # thisSource <- unique(dbData$SystemType)
+            # dbData <- select(dbData, -SystemType)
+            dbData <- dropCols(dbData, 'SystemType')
             calibrationUsed <- names(pps@calibration[[1]])
             if(length(calibrationUsed)==0) calibrationUsed <- 'None'
 
@@ -556,6 +583,7 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup'), id=NULL,
                         noMatch <- which(!(x$UID %in% binData$UID))
                         x$UID[noMatch] <- x$newUID[noMatch]
                         x$BinaryFile <- NULL
+                        x$BinaryUsed <- thisBin$fileInfo$fileName
                         binData %>%
                             # select(-.data$BinaryFile) %>%
                             inner_join(x, by='UID') %>%
@@ -587,20 +615,21 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup'), id=NULL,
             # in the list, but is this reliable? Probably not
 
             colsToDrop <- c('Id', 'comment', 'sampleRate', 'detectorName', 'parentID',
-                            'sr', 'callType', 'newUID', tarMoCols)
+                            'sr', 'callType', 'newUID', tarMoCols, 'BinaryUsed')
 
             acousticEvents <- lapply(dbData, function(ev) {
                 ev <- ev[sapply(ev, function(x) !is.null(x))]
-                binariesUsed <- sapply(ev, function(x) unique(x$BinaryFile)) %>%
+                binariesUsed <- sapply(ev, function(x) unique(x$BinaryUsed)) %>%
                     unlist(recursive = FALSE) %>% unique()
-                binariesUsed <- unlist(sapply(binariesUsed, function(x) grep(x, binList, value=TRUE, fixed=TRUE), USE.NAMES = FALSE))
+                # binariesUsed <- unlist(sapply(binariesUsed, function(x) grep(x, binList, value=TRUE, fixed=TRUE), USE.NAMES = FALSE))
 
                 evId <- paste0(gsub('\\.sqlite3', '', basename(db)), '.', unique(ev[[1]]$parentID))
                 if(all(tarMoCols %in% colnames(ev[[1]]))) {
                     evTarMo <- ev[[1]][1, tarMoCols]
+                    colnames(evTarMo) <- ppVars()$locCols
                 } else {
                     evTarMo <- data.frame(matrix(NA, nrow=1, ncol=length(tarMoCols)))
-                    colnames(evTarMo) <- tarMoCols
+                    colnames(evTarMo) <- ppVars()$locCols
                 }
 
                 evComment <- unique(ev[[1]]$comment)
@@ -611,10 +640,11 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup'), id=NULL,
                     x$BinaryFile <- basename(x$BinaryFile)
                     thisType <- unique(x$callType)
                     x <- dropCols(x, colsToDrop)
+                    x <- distinct(x)
                     attr(x, 'calltype') <- thisType
                     x
                 })
-                acEv <- AcousticEvent(id = evId, detectors = ev, settings = list(sr = thisSr, source=thisSource),
+                acEv <- AcousticEvent(id = evId, detectors = ev, settings = list(sr = thisSr),#, source=thisSource),
                               files = list(binaries=binariesUsed, db=db, calibration=calibrationUsed),
                               localizations = list(PGTargetMotion = evTarMo))
                 ancillary(acEv)$eventComment <- evComment
@@ -709,7 +739,7 @@ getDbData <- function(db, grouping=c('event', 'detGroup'), label=NULL, extraCols
                    label <- NULL
                }
 
-               eventColumns <- c('Id', label)
+               eventColumns <- unique(c('Id', label, 'Text_Annotation'))
                evName <- 'DGL'
            },
            {
@@ -782,6 +812,12 @@ getDbData <- function(db, grouping=c('event', 'detGroup'), label=NULL, extraCols
 
     # rename column to use as label - standardize across event group types
     colnames(allDetections)[which(colnames(allDetections)==label)] <- 'eventLabel'
+    if(grouping == 'detGroup' &&
+       length(eventColumns) > 2 &&
+       'Text_Annotation' %in% colnames(allDetections)) {
+        colnames(allDetections)[colnames(allDetections) == 'Text_Annotation'] <- 'comment'
+    }
+
     if(!('eventLabel' %in% colnames(allDetections))) {
         allDetections$eventLabel <- NA
     }
@@ -794,7 +830,8 @@ getDbData <- function(db, grouping=c('event', 'detGroup'), label=NULL, extraCols
     for(i in whichChar) {
         allDetections[, i] <- str_trim(allDetections[, i])
     }
-    allDetections <- select(allDetections, -.data$UTC)
+    # allDetections <- select(allDetections, -.data$UTC)
+    allDetections <- dropCols(allDetections, 'UTC')
     allDetections$UID <- as.character(allDetections$UID)
     allDetections$newUID <- as.character(allDetections$newUID)
     allDetections$parentID <- paste0(evName, allDetections$parentID)
@@ -824,6 +861,9 @@ getMatchingBinaryData <- function(dbData, binList, dbName, idCol = 'UID') {
         if(bin == 1) {
             result <- thisBin
         } else {
+            if(length(thisBin$data) > length(result$data)) {
+                result$fileInfo <- thisBin$fileInfo
+            }
             result$data <- c(result$data, thisBin$data)
         }
         if(all(dbData$matched)) {
@@ -880,25 +920,15 @@ checkGrouping <- function(grouping, format) {
         # if times arent posix, convert and check that it worked
         if(!inherits(grouping$start, 'POSIXct') ||
            !inherits(grouping$end, 'POSIXct')) {
-
             grouping$start <- parseUTC(grouping$start, format)
             grouping$end <- parseUTC(grouping$end, format)
-
-            if(any(is.na(grouping$start)) ||
-               any(is.na(grouping$end))) {
-                stop('Some event start/end times were not able to be converted, please check to',
-                        ' ensure that format argument matches date format in provided file.')
-            }
-            # checkDate <- menu(title = paste0('\nThe first event start time is ', grouping$start[1],
-            #                                  ', does this look okay?'),
-            #                   choices = c('Yes, continue processing.',
-            #                               "No. I'll stop and check grouping data and the time format argument.")
-            # )
-            # if(checkDate != 1) {
-            #     stop('Stopped due to invalid event times.')
-            # }
         }
         grouping$id <- as.character(grouping$id)
+    }
+    if(any(is.na(grouping$start)) ||
+       any(is.na(grouping$end))) {
+        stop('Some event start/end times are "NA", most likely cause is that "format"',
+             ' was not specified properly.')
     }
     evName <- as.character(grouping$id)
     evTable <- table(evName)
@@ -1030,7 +1060,7 @@ wavToGroup <- function(db) {
     }
 
     if(is.na(wavCol)) {
-        pamWarning('Wav file names not saved in database, events will be labelled')
+        pamWarning('Wav file names not saved in database, events will be labelled numerically')
         saGrp <- select(sa, c('UTC', 'Status', 'SystemType'))
         saGrp <- filter(saGrp, .data$Status != 'Continue')
         saGrp <- distinct(arrange(saGrp, UTC))
@@ -1114,6 +1144,9 @@ parseDglLabel <- function(x, colnames) {
     }
     if(length(newCols) == 1) {
         return(newCols)
+    }
+    if('eventType' %in% newCols) {
+        return('eventType')
     }
     if('Text_Annotation' %in% newCols) {
         return('Text_Annotation')

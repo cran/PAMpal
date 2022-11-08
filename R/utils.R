@@ -7,8 +7,11 @@ pgDateToPosix <- function(x) {
 
 # drop columns with names cols
 dropCols <- function(x, cols) {
+    ct <- attr(x, 'calltype')
     keepCols <- !(colnames(x) %in% cols)
-    x[, keepCols, drop=FALSE]
+    x <- x[, keepCols, drop=FALSE]
+    attr(x, 'calltype') <- ct
+    x
 }
 
 # what event is a UID in returns named index
@@ -28,7 +31,7 @@ whereUID <- function(study, UID, quiet=FALSE) {
     whereNA <- is.na(where)
     if(!quiet && any(whereNA)) {
         pamWarning('UID(s) ', paste0(UID[whereNA], collapse=', '),
-                ' not found in any events.')
+                   ' not found in any events.')
     }
     where
 }
@@ -167,29 +170,7 @@ safeListAdd <- function(x, value) {
     x
 }
 
-# clip of fixed length, zeropads if needed and deals with edge case
-clipAroundPeak <- function(wave, length, noise=FALSE) {
-    if(length(wave) < length) {
-        return(c(wave, rep(0, length - length(wave))))
-    }
-    peak <- which.max(abs(wave))
-    low <- peak - floor(length/2)
-    high <- ceiling(peak + length/2) -1
-    if(low < 1) {
-        return(wave[1:length])
-    }
-    if(high > length(wave)) {
-        return(wave[(length(wave)-length+1):length(wave)])
-    }
-    if(noise) {
-        if(low - length > 1) {
-            return(wave[(low-length):(low-1)])
-        } else {
-            return(wave[1:length])
-        }
-    }
-    wave[low:high]
-}
+
 
 printN <- function(x, n=6, collapse=', ') {
     nItems <- length(x)
@@ -200,18 +181,6 @@ printN <- function(x, n=6, collapse=', ') {
         x <- c(x[1:n], paste0('... (', nItems-n, ' more not shown)'))
     }
     paste0(paste(x, collapse=collapse))
-}
-
-checkRecordings <- function(x) {
-    if(is.null(files(x)$recordings)) {
-        stop('No recordings found, use function "addRecordings" first.', call.=FALSE)
-    }
-    exists <- file.exists(files(x)$recordings$file)
-    if(all(!exists)) {
-        stop('Recording files could not be located on disk, try ',
-             '"updateFiles" first.', call.=FALSE)
-    }
-    exists
 }
 
 getPamFft <- function(data) {
@@ -242,14 +211,17 @@ getPamFft <- function(data) {
 ppVars <- function() {
     list(nonModelVars = c('UID', 'Id', 'parentUID', 'sampleRate', 'Channel',
                           'angle', 'angleError', 'peakTime', 'depth', 'sr'),
-         tarMoCols = c(
-             "TMModelName1", "TMLatitude1", "TMLongitude1", "BeamLatitude1",
-             "BeamLongitude1", "BeamTime1", "TMSide1", "TMChi21", "TMAIC1", "TMProbability1",
-             "TMDegsFreedom1", "TMPerpendicularDistance1", "TMPerpendicularDistanceError1", "TMDepth1",
-             "TMDepthError1","TMHydrophones1","TMComment1","TMError1","TMLatitude2","TMLongitude2",
-             "BeamLatitude2","BeamLongitude2","BeamTime2","TMSide2", "TMChi22","TMAIC2",
-             "TMProbability2", "TMDegsFreedom2", "TMPerpendicularDistance2", "TMPerpendicularDistanceError2",
-             "TMDepth2" ,"TMDepthError2", "TMHydrophones2","TMError2","TMComment2"),
+         # tarMoCols = c(
+         #     "TMModelName1", "TMLatitude1", "TMLongitude1", "BeamLatitude1",
+         #     "BeamLongitude1", "BeamTime1", "TMSide1", "TMChi21", "TMAIC1", "TMProbability1",
+         #     "TMDegsFreedom1", "TMPerpendicularDistance1", "TMPerpendicularDistanceError1", "TMDepth1",
+         #     "TMDepthError1","TMHydrophones1","TMComment1","TMError1","TMLatitude2","TMLongitude2",
+             # "BeamLatitude2","BeamLongitude2","BeamTime2","TMSide2", "TMChi22","TMAIC2",
+             # "TMProbability2", "TMDegsFreedom2", "TMPerpendicularDistance2", "TMPerpendicularDistanceError2",
+             # "TMDepth2" ,"TMDepthError2", "TMHydrophones2","TMError2","TMComment2"),
+         tarMoCols = c('TMModelName1', 'TMLatitude1', 'TMLongitude1', 'TMPerpendicularDistance1',
+                        'TMPerpendicularDistanceError1', 'TMDepth1', 'TMDepthError1'),
+         locCols = c('locName', 'locLat', 'locLong', 'perpDist', 'perpDistErr', 'locDepth', 'depthErr'),
          bftHeight = data.table(bftMax=c(1, 2.4, 2.9, 3.4, 3.9, 4.4, 4.9, 5.4, 6, 12),
                                 waveHeight=c(0, 0.05, 0.1, 0.2, 0.5, 0.6, 1.25, 1.3, 2.5, 2.5),
                                 key='bftMax'),
@@ -262,7 +234,7 @@ ppVars <- function() {
                                      'Blainvilles', 'Blainvilles',
                                      'MmMe', 'MmMe', 'MmMe')),
          dglCols = c('Id', 'UID', 'UTC', 'UTCMilliseconds', 'PCLocalTime', 'PCTime',
-                      'ChannelBitmap', 'SequenceBitmap', 'EndTime', 'DataCount')
+                     'ChannelBitmap', 'SequenceBitmap', 'EndTime', 'DataCount')
     )
 }
 
@@ -283,7 +255,7 @@ findWavCol <- function(sa) {
 }
 
 
-getSr <- function(x, type=c('click', 'whistle', 'cepstrum'), name=NULL, UTC=NULL) {
+getSr <- function(x, type=c('click', 'whistle', 'cepstrum'), name=NULL, data=NULL) {
     # need to vectorize better this will do matchSR over and over again FML
     # if(length(name) > 1) {
     #     return(sapply(name, function(n) {
@@ -295,22 +267,39 @@ getSr <- function(x, type=c('click', 'whistle', 'cepstrum'), name=NULL, UTC=NULL
         return(NULL)
     }
     # type <- match.arg(type)
-    if(length(name) != length(UTC)) {
+    if(length(name) != length(data$UTC)) {
         if(length(name) == 1 &&
-           length(UTC) > 1) {
-            name <- rep(name, length(UTC))
+           length(data$UTC) > 1) {
+            name <- rep(name, length(data$UTC))
         }
-        if(length(UTC) == 1 &&
-           length(name) > 1) {
-            UTC <- rep(UTC, length(name))
-        }
+        # if(length(data$UTC) == 1 &&
+        #    length(name) > 1) {
+        #     UTC <- rep(UTC, length(name))
+        # }
     }
     srOut <- rep(NA, max(1, length(name)))
     if(is.AcousticEvent(x)) {
-        if(length(settings(x)$sr) != 1) {
-            return(NULL)
+        if(length(settings(x)$sr) == 1) {
+            return(rep(settings(x)$sr, length(srOut)))
         }
-        return(rep(settings(x)$sr, length(srOut)))
+        if(!is.null(data)) {
+            # srDf <- bind_rows(lapply(files(x)$db, function(d) {
+            #     utcDf <- data.frame(ix=1:length(UTC), UTC=UTC)
+            #     utcDf <- matchSR(utcDf, d, safe=TRUE, fixNA=FALSE)
+            #     arrange(utcDf, ix)[c('UTC', 'sampleRate')]
+            # }))
+            data$ix <- 1:nrow(data)
+            srDf <- bind_rows(lapply(split(data, data$db), function(d) {
+                utcDf <- matchSR(d, d$db[1], safe=TRUE, fixNA=FALSE)
+                utcDf
+            }))
+            srDf <- arrange(srDf, .data$ix)
+            srOut <- srDf$sampleRate
+            if(!all(is.na(srOut))) {
+                return(srOut)
+            }
+        }
+        return(NULL)
     }
     for(i in seq_along(srOut)) {
         srOut[i] <- doOneSr(x, type, name[i])
@@ -324,10 +313,19 @@ getSr <- function(x, type=c('click', 'whistle', 'cepstrum'), name=NULL, UTC=NULL
     # PORBABLY NEED TO RETURN NA INSTEAD OF NULL, NEED TO CHECK OTHER
     # FUNS THAT USE GETSR TO SEE WHAT THEY CHECK ON FAILURE
     # if we are trying to match by times, do it from the database
-    if(!is.null(UTC)) {
-        srDf <- bind_rows(lapply(files(x)$db, function(d) {
-            matchSR(UTC[srNa], d, safe=TRUE, fixNA=FALSE)
+    if(!is.null(data)) {
+        # srDf <- bind_rows(lapply(files(x)$db, function(d) {
+        #     utcDf <- data.frame(ix=1:length(UTC[srNa]), UTC=UTC[srNa])
+        #     utcDf <- matchSR(utcDf, d, safe=TRUE, fixNA=FALSE)
+        #     arrange(utcDf, ix)[c('UTC', 'sampleRate')]
+        #     # matchSR(UTC[srNa], d, safe=TRUE, fixNA=FALSE)
+        # }))
+        data$ix <- 1:nrow(data)
+        srDf <- bind_rows(lapply(split(data, data$db), function(d) {
+            utcDf <- matchSR(d[srNa, ], d$db[srNa][1], safe=TRUE, fixNA=FALSE)
+            utcDf
         }))
+        srDf <- arrange(srDf, .data$ix)
         srOut[srNa] <- srDf$sampleRate
     }
     # giv eup
@@ -378,4 +376,134 @@ doOneSr <- function(x, type=c('click', 'whistle', 'cepstrum'), name=NULL) {
         return(possSr)
     }
     NA
+}
+
+# returns named vector for AcEv, or named list of named vectors for AcSt
+getTimeRange <- function(x, mode=c('event', 'detection'), sample=FALSE) {
+    mode <- match.arg(mode)
+    # if(is.AcousticStudy(x)) {
+    #     return(lapply(events(x), function(e) {
+    #         getTimeRange(e, mode)
+    #     }))
+    # }
+    allDets <- lapply(events(x), function(e) {
+        if(length(detectors(e)) == 0) {
+            return(NULL)
+        }
+        dets <- distinct(
+            bind_rows(lapply(detectors(e), function(d) {
+                if(is.null(d) ||
+                   nrow(d) == 0) {
+                    return(NULL)
+                }
+                out <- d[, c('UID', 'UTC', 'duration'), drop = FALSE]
+                if('duration' %in% colnames(d)) {
+                    switch(attr(d, 'calltype'),
+                           'whistle' = out$duration <- d$duration,
+                           'click' = out$duration <- d$duration / 1e6,
+                           'cepstrum' = out$duration <- d$duration
+                    )
+                } else {
+                    out$duration <- 0
+                }
+                out
+            }))
+        )
+        if(mode == 'event') {
+            if(sample) {
+                minUID <- dets$UID[which.min(dets$UTC)[1]]
+                maxUID <- dets$UID[which.max(dets$UTC)[1]]
+                minUTC <- min(dets$UTC)
+                maxUTC <- max(dets$UTC)
+                recMap <- files(x)$recordings
+                minIx <- checkIn(minUTC, recMap)
+                if(is.na(minIx) ||
+                   (length(minIx) != 1) ||
+                   is.na(recMap$startSample[minIx])) {
+                    evResult <- list(start = minUTC)
+                } else {
+                    binMin <- getBinaryData(x, minUID)[[1]]
+                    binSr <- ifelse(is.na(binMin$sr), recMap$sr[minIx], binMin$sr)
+                    evResult <- list(start = recMap$start[minIx] +
+                                         binMin$startSample/binSr - recMap$startSample[minIx]/recMap$sr[minIx])
+                }
+                maxIx <- checkIn(maxUTC, recMap)
+                if(is.na(maxIx) ||
+                   (length(maxIx) != 1) ||
+                   is.na(recMap$startSample[maxIx])) {
+                    evResult$end <- maxUTC
+                } else {
+                    binMax <- getBinaryData(x, maxUID)[[1]]
+                    binSr <- ifelse(is.na(binMax$sr), recMap$sr[maxIx], binMax$sr)
+                    evResult$end <- recMap$start[maxIx] +
+                        binMax$startSample / binSr - recMap$startSample[maxIx] / recMap$sr[maxIx]
+                }
+                return(evResult)
+            }
+            return(list(start=min(dets$UTC), end=max(dets$UTC)))
+        }
+        if(mode == 'detection') {
+            if(sample) {
+                recMap <- files(x)$recordings
+                result <- lapply(getBinaryData(x, dets$UID), function(b) {
+                    thisDate <- b$date
+                    wavIx <- checkIn(thisDate, recMap)
+                    if(is.na(wavIx) ||
+                       (length(wavIx) != 1) ||
+                       is.na(recMap$startSample[wavIx])) {
+                        return(list(start=thisDate, end=thisDate + dets$duration[dets$UID == b$UID][1]))
+                    }
+                    binSr <- ifelse(is.na(b$sr), recMap$sr[wavIx], b$sr)
+                    out <- list(start=recMap$start[wavIx] +
+                                    b$startSample / binSr - recMap$startSample[wavIx] / recMap$sr[wavIx])
+                    out$end <- out$start
+                    if('sampleDuration' %in% names(b)) {
+                        out$end <- out$end + b$sampleDuration / recMap$sr[wavIx]
+                    }
+                    out
+                })
+
+            } else {
+                # result <- lapply(dets$UTC, function(d) {
+                #     list(start = d, end = d)
+                # })
+                result <- lapply(1:nrow(dets), function(d) {
+                    list(start = dets$UTC[d], end = dets$UTC[d] + dets$duration[d])
+                })
+                names(result) <- dets$UID
+            }
+            return(result)
+        }
+    })
+    if(mode == 'detection') {
+        allDets <- unlist(allDets, recursive=FALSE)
+    }
+    allDets
+}
+
+checkSameDetections <- function(x, y) {
+    xDet <- getDetectorData(x)
+    yDet <- getDetectorData(y)
+    if(!all(names(xDet) %in% names(yDet)) ||
+       !all(names(yDet) %in% names(xDet))) {
+        warning('Different detectors')
+        return(FALSE)
+    }
+    for(d in names(xDet)) {
+        if(nrow(xDet[[d]]) != nrow(yDet[[d]])) {
+            warning('Different number of detections for detector ', d)
+            return(FALSE)
+        }
+        xy <- nrow(setdiff(xDet[[d]], yDet[[d]]))
+        if(xy != 0) {
+            warning('xy setdiff is ', xy)
+            return(FALSE)
+        }
+        yx <- nrow(setdiff(yDet[[d]], xDet[[d]]))
+        if(yx != 0) {
+            warning('yx setdiff is ', yx)
+            return(FALSE)
+        }
+    }
+    TRUE
 }

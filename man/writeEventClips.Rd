@@ -10,6 +10,7 @@ writeEventClips(
   outDir = ".",
   mode = c("event", "detection"),
   channel = 1,
+  filter = 0,
   useSample = FALSE,
   progress = TRUE,
   verbose = TRUE
@@ -29,8 +30,13 @@ wav clips of entire events or individual detections}
 
 \item{channel}{channel(s) of clips to write}
 
+\item{filter}{filter to apply to wav clips before writing, values in kHz. A value of \code{0}
+applies no filter. A single value applies a highpass filter at that value. A vector of two
+values applies a lowpass filter if the first number is \code{0}, or a bandpass filter if
+both are non-zero.}
+
 \item{useSample}{logical flag to use startSample information in binaries instead of UTC
-time for start of detections. This can be slightly more accurate (~1ms) but will take 
+time for start of detections. This can be slightly more accurate (~1ms) but will take
 longer}
 
 \item{progress}{logical flag to show progress bar}

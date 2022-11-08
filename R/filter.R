@@ -57,6 +57,12 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
     # do event level filters first
     # browser()
     # isSpecies <- grepl('^species|^Species', dotChars)
+    checkOldDet <- grepl('detector|Detector', dotChars) &
+        !grepl('detectorName', dotChars)
+    if(any(checkOldDet)) {
+        warning('Filtering detectors has changed in v0.17.0, please use "detectorName"',
+                ' instead of "detector"')
+    }
     isSpecies <- grepl('species|Species', dotChars)
     if(any(isSpecies)) {
         # do species filtering first
@@ -115,7 +121,8 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
                 ancillary(x)$environmental
             }))
 
-            filteredEv <- doFilter(evDf[, !(names(evDf) %in% c('UTC', 'Longitude', 'Latitude')), drop=FALSE], ...)
+            filteredEv <- doFilter(evDf[, !(names(evDf) %in% c('UTC', 'Longitude', 'Latitude')), drop=FALSE],
+                                   dotChars = dotChars, ...)
             events(.data) <- events(.data)[names(events(.data)) %in% unique(filteredEv$event)]
             if(length(events(.data)) == 0) {
                 .data <- .addPamWarning(.data)
@@ -124,20 +131,24 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
         }
     }
 
-    events(.data) <- lapply(events(.data), function(x) {
-        filter(x, ...)
-    })
-    isNull <- sapply(events(.data), is.null)
-    events(.data) <- events(.data)[!isNull]
+    # events(.data) <- lapply(events(.data), function(x) {
+    #     filter(x, ..., dotChars=dotChars)
+    # })
+    # isNull <- sapply(events(.data), is.null)
+    # events(.data) <- events(.data)[!isNull]
+    .data <- detectorFilt(.data, dotChars=dotChars, ...)
     .data <- .addPamWarning(.data)
     .data
 }
-
+# AcEv method no longer used internally because it was really slow, keeping because it doesnt hurt
+# speed is not an issue for single events
 #' @export
 #'
-filter.AcousticEvent <- function(.data, ..., .preserve=FALSE) {
+filter.AcousticEvent <- function(.data, ..., .preserve=FALSE, dotChars=NULL) {
     # browser()
-    dotChars <- sapply(quos(...), as_label)
+    if(is.null(dotChars)) {
+        dotChars <- sapply(quos(...), as_label)
+    }
     # isDetector <- grepl('^.{0,3}detector|^.{0,3}Detector', dotChars)
     isDetector <- grepl('\\b[Dd]etector\\b', dotChars, ignore.case=TRUE)
     detKeep <- rep(TRUE, length(detectors(.data)))
@@ -154,7 +165,7 @@ filter.AcousticEvent <- function(.data, ..., .preserve=FALSE) {
         detectors(.data) <- detectors(.data)[detKeep]
     }
     detectors(.data) <- lapply(detectors(.data), function(x) {
-        doFilter(x, ...)
+        doFilter(x, dotChars = dotChars, ...)
     })
     detNums <- sapply(detectors(.data), nrow)
     # if(all(detNums == 0)) {
@@ -164,11 +175,42 @@ filter.AcousticEvent <- function(.data, ..., .preserve=FALSE) {
     .data
 }
 
-doFilter <- function(.x, ...) {
-    dotChars <- sapply(quos(...), as_label)
+doFilter <- function(.x, dotChars=NULL, ...) {
+    if(is.null(dotChars)) {
+        dotChars <- sapply(quos(...), as_label)
+    }
     hasCol <- sapply(dotChars, function(d) any(sapply(colnames(.x), function(c) grepl(c, d))))
     if(!any(hasCol)) {
         return(.x)
     }
     filter(.x, !!!quos(...)[hasCol])
+}
+# this is way faster to gather all dets as DFs, filter on big, then reassign to events
+# quos/labels is slow when you have to do it on thousands of events compared to the
+# actual filtering and data manipulation
+detectorFilt <- function(x, dotChars=NULL, ...) {
+    if(is.null(dotChars)) {
+        dotChars <- sapply(quos(...), as_label)
+    }
+    dets <- getDetectorData(x, measures = FALSE)
+    names(dets) <- NULL
+    for(d in seq_along(dets)) {
+        dets[[d]] <- doFilter(dropCols(dets[[d]], c('db', 'species')), dotChars=dotChars, ...)
+        dets[[d]] <- lapply(split(dets[[d]], dets[[d]]$eventId), function(e) {
+            tmp <- split(e, e$detectorName)
+            # ct <- attr(tmp[[1]], 'calltype')
+            for(i in seq_along(tmp)) {
+                tmp[[i]] <- dropCols(tmp[[i]], c('eventId', 'detectorName'))
+                # attr(tmp[[i]], 'calltype') <- ct
+                rownames(tmp[[i]]) <- 1:nrow(tmp[[i]])
+            }
+            tmp
+        })
+    }
+    dets <- squishList(unlist(dets, recursive=FALSE))
+    x <- x[names(events(x)) %in% names(dets)]
+    for(e in names(events(x))) {
+        detectors(x[[e]]) <- dets[[e]]
+    }
+    x
 }
