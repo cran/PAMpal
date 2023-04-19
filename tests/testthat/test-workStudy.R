@@ -42,7 +42,7 @@ test_that('Test working with AcousticStudy object', {
     ))
     gps <- data.frame(Latitude = 32, Longitude=-118, UTC = as.POSIXct('2020-01-30 00:00:00', tz='UTC'))
     expect_warning(addGps(exData, gps=gps, thresh=3600),
-                   'Some GPS coordinate matches exceeded')
+                   '3 events had GPS matches')
     exData <- addGps(exData, gps=gps, thresh=Inf)
     expect_equal(nrow(gps(exData)), 1)
     expect_equal(getClickData(exData)$Latitude[1], 32)
@@ -107,8 +107,8 @@ test_that('Test working with AcousticStudy object', {
     # test add recordings
     recs <- system.file('extdata', 'Recordings', package='PAMpal')
     exData <- addRecordings(exData, folder = recs, log=FALSE, progress=FALSE)
-    expect_identical(normalizePath(files(exData)$recordings$file),
-                     normalizePath(list.files(recs, full.names = TRUE)))
+    expect_identical(normalizePath(files(exData)$recordings$file, winslash = '/'),
+                     normalizePath(list.files(recs, full.names = TRUE), winslash = '/'))
     expect_warning(warnRec <- addRecordings(exData, folder = 'DNE', log=FALSE, progress=FALSE))
 
     # test warning access from recorder warning
@@ -224,7 +224,10 @@ test_that('Test updateFiles', {
                                 files(exStudy[[1]])$binaries)))
     recs <- system.file('extdata', 'Recordings', package='PAMpal')
     exStudy <- addRecordings(exStudy, folder =recs, log=FALSE, progress=FALSE)
-    files(exStudy)$recordings$file <- substr(files(exStudy)$recordings$file, start=5, stop=10e3)
+    # files(exStudy)$recordings$file <- substr(files(exStudy)$recordings$file, start=5, stop=10e3)
+    files(exStudy)$recordings$file <-
+        gsub(dirname(recs), 'New/Directory',
+             files(exStudy)$recordings$file)
     expect_true(!any(file.exists(files(exStudy)$recordings$file)))
     exStudy <- updateFiles(exStudy, recording=recs, verbose=FALSE)
     expect_true(all(file.exists(files(exStudy)$recordings$file)))
@@ -244,4 +247,52 @@ test_that('Test hydrophone depth', {
     clicks <- getClickData(exStudy)
     expect_true('hpDepth' %in% colnames(clicks))
     expect_equal(10, clicks$hpDepth[1])
+})
+
+test_that('Test annotation stuff', {
+    exPps <- new('PAMpalSettings')
+    exPps <- addDatabase(exPps, system.file('extdata', 'Example.sqlite3', package='PAMpal'), verbose=FALSE)
+    exPps <- addBinaries(exPps, system.file('extdata', 'Binaries', package='PAMpal'), verbose=FALSE)
+    exClick <- function(data) {
+        standardClickCalcs(data, calibration=NULL, filterfrom_khz = 0)
+    }
+    exPps <- addFunction(exPps, exClick, module = 'ClickDetector', verbose=FALSE)
+    exPps <- addFunction(exPps, roccaWhistleCalcs, module='WhistlesMoans', verbose=FALSE)
+    exPps <- addFunction(exPps, standardCepstrumCalcs, module = 'Cepstrum', verbose=FALSE)
+    exData <- processPgDetections(exPps, mode='db', id='Example', progress = FALSE, verbose = FALSE)
+
+    exData <- addGps(exData, thresh=365*24*3600)
+    exData <- setSpecies(exData, 'pamguard')
+    anno <- prepAnnotation(exData)
+    expect_warning(checkAnnotation(anno), 'Fill in data for')
+    anno$source <- 'test'
+    anno$annotator <- 'me'
+    anno$contact <- 'me'
+    recUrl <- data.frame(matchId = names(events(exData)),
+                         filestart = min(getClickData(exData)$UTC),
+                         recording_url = paste0(1:3, 'test.com'))
+    anno <- matchRecordingUrl(anno, recUrl)
+    expect_message(checkAnnotation(anno), 'Also missing')
+    exData <- addAnnotation(exData, anno, verbose = FALSE)
+    expect_identical(anno, getAnnotation(exData))
+    expect_message(export_annomate(exData), 'Also missing')
+    expect_identical(export_annomate(exData), export_annomate(anno))
+})
+
+test_that('Test spec anno marking', {
+    data("exStudy")
+    anno <- data.frame(
+        start = as.POSIXct('2018-03-20 15:25:10', tz='UTC'),
+        fmin = c(16000, 17000, 18000, 20000),
+        fmax = c(17000, 18000, 19000, 24000))
+    anno$end <- anno$start + 1
+    exStudy <- markAnnotated(exStudy, anno)
+    expect_true(all(getClickData(exStudy)$inAnno[c(1,3)]))
+    expect_true(!any(getClickData(exStudy)$inAnno[c(2,4)]))
+    expect_true(!any(getWhistleData(exStudy)$inAnno))
+    exStudy <- markAnnotated(exStudy, anno, tBuffer=c(0,1.5))
+    expect_true(all(getWhistleData(exStudy)$inAnno[c(3,4,5,6,7,10,11,12,13,14)]))
+    expect_true(all(getCepstrumData(exStudy)$inAnno))
+    exStudy <- markAnnotated(exStudy, anno, tBuffer =c(0, 1.5), fBuffer = c(0, 400))
+    expect_true(all(getWhistleData(exStudy)$inAnno[1:2]))
 })

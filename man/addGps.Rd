@@ -11,7 +11,7 @@
 \usage{
 addGps(x, gps = NULL, thresh = 3600, ...)
 
-\S4method{addGps}{data.frame}(x, gps = NULL, thresh = 3600, ...)
+\S4method{addGps}{data.frame}(x, gps, thresh = 3600, keepDiff = FALSE, ...)
 
 \S4method{addGps}{AcousticEvent}(x, gps = NULL, thresh = 3600, ...)
 
@@ -37,6 +37,9 @@ data, if the closest coordinate is more than \code{thresh} apart then the
 Latitude and Longitude values will be set to \code{NA}}
 
 \item{\dots}{additional arguments for other methods}
+
+\item{keepDiff}{logical flag to keep time difference column (between GPS time
+and data time)}
 }
 \value{
 the same data as \code{x}, with Lat/Long data added. AcousticStudy objects
@@ -50,11 +53,13 @@ Add GPS Lat / Long to an AcousticStudy or AcousticEvent.
 }
 \details{
 Latitude and Longitude coordinates will be matched to the data
-  by using data.tables rolling join with \code{roll='nearest'}. After the
-  join is done, the time difference between the matched rows is checked
+  by interpolating between points in the provided GPS data. After the
+  interpolating is done, the time difference between the matched rows is checked
   and any that are greater than the set threshold are set to NA. This is
   done to prevent accidentally matching weird things if an incomplete set
-  of GPS data is provided.
+  of GPS data is provided. An approximate distance between the interpolated
+  points and the closest known GPS point is provided as a "gpsUncertainty"
+  column (distance in meters).
 
   If \code{x} is an \linkS4class{AcousticEvent} or \linkS4class{AcousticStudy},
   then \code{gps} can be omitted and will be read from the databases contained

@@ -5,6 +5,19 @@ pgDateToPosix <- function(x) {
     as.POSIXct(as.character(x), format='%Y-%m-%d %H:%M:%OS', tz='UTC')
 }
 
+#' @importFrom lubridate parse_date_time
+#'
+parseUTC <- function(x, format=c('%m/%d/%Y %H:%M:%OS', '%m-%d-%Y %H:%M:%OS',
+                                 '%Y/%m/%d %H:%M:%OS', '%Y-%m-%d %H:%M:%OS')) {
+    if(inherits(x, 'factor')) {
+        x <- as.character(x)
+    }
+    if(is.character(x)) {
+        x <- parse_date_time(x, orders=format, tz='UTC', exact=TRUE, truncated=2, quiet=TRUE)
+    }
+    x
+}
+
 # drop columns with names cols
 dropCols <- function(x, cols) {
     ct <- attr(x, 'calltype')
@@ -78,14 +91,14 @@ matchSR <- function(data, db, extraCols = NULL, safe=FALSE, fixNA=TRUE) {
             distinct() %>%
             data.table()
 
-        setkeyv(soundAcquisition, 'UTC')
+        # setkeyv(soundAcquisition, 'UTC')
 
         data <- data.table(data)
-        setkeyv(data, 'UTC')
+        # setkeyv(data, 'UTC')
 
         # This rolling join rolls to the first time before. Since we filtered to only starts, it goes back
         # to whatever the last Start was.
-        data <- soundAcquisition[data, roll = TRUE] %>%
+        data <- soundAcquisition[data, roll = TRUE, on='UTC'] %>%
             data.frame()
         srNa <- which(is.na(data$sampleRate))
     } else {
@@ -146,7 +159,7 @@ inInterval <- function(bounds, sa) {
 }
 
 # add list without replacing old one, only replace matching names
-safeListAdd <- function(x, value) {
+safeListAdd <- function(x, value, replace=TRUE) {
     if(is.null(value)) {
         return(x)
     }
@@ -161,6 +174,14 @@ safeListAdd <- function(x, value) {
     hasName <- names(value) %in% names(x)
     if(any(hasName)) {
         for(n in names(value)[hasName]) {
+            if(isFALSE(replace)) {
+                next
+            }
+            if(is.na(replace) &&
+               !is.na(x[[n]])) {
+                next
+            }
+            # only replace if TRUE or NA and isNA
             x[[n]] <- value[[n]]
         }
     }
@@ -170,7 +191,12 @@ safeListAdd <- function(x, value) {
     x
 }
 
-
+#' @importFrom lubridate int_standardize
+#'
+withinLHS <- function(a, int) {
+    int <- int_standardize(int)
+    as.numeric(a) - as.numeric(int@start) < int@.Data & as.numeric(a) - as.numeric(int@start) >= 0
+}
 
 printN <- function(x, n=6, collapse=', ') {
     nItems <- length(x)
@@ -210,7 +236,8 @@ getPamFft <- function(data) {
 
 ppVars <- function() {
     list(nonModelVars = c('UID', 'Id', 'parentUID', 'sampleRate', 'Channel',
-                          'angle', 'angleError', 'peakTime', 'depth', 'sr'),
+                          'angle', 'angleError', 'peakTime', 'depth', 'sr',
+                          'annoId', 'inAnno', 'db'),
          # tarMoCols = c(
          #     "TMModelName1", "TMLatitude1", "TMLongitude1", "BeamLatitude1",
          #     "BeamLongitude1", "BeamTime1", "TMSide1", "TMChi21", "TMAIC1", "TMProbability1",
@@ -234,7 +261,8 @@ ppVars <- function() {
                                      'Blainvilles', 'Blainvilles',
                                      'MmMe', 'MmMe', 'MmMe')),
          dglCols = c('Id', 'UID', 'UTC', 'UTCMilliseconds', 'PCLocalTime', 'PCTime',
-                     'ChannelBitmap', 'SequenceBitmap', 'EndTime', 'DataCount')
+                     'ChannelBitmap', 'SequenceBitmap', 'EndTime', 'DataCount'),
+         binPattern = '(Clicks|WhistlesMoans|GPL).*pgdf$'
     )
 }
 
@@ -400,8 +428,10 @@ getTimeRange <- function(x, mode=c('event', 'detection'), sample=FALSE) {
                 if('duration' %in% colnames(d)) {
                     switch(attr(d, 'calltype'),
                            'whistle' = out$duration <- d$duration,
-                           'click' = out$duration <- d$duration / 1e6,
-                           'cepstrum' = out$duration <- d$duration
+                           # 'click' = out$duration <- d$duration / 1e6,
+                           'click' = out$duration <- 0, # duration is not reliable for clicks
+                           'cepstrum' = out$duration <- d$duration,
+                           'gpl' = out$duration <- d$duration
                     )
                 } else {
                     out$duration <- 0

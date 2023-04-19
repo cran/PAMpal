@@ -57,7 +57,7 @@ addBinaries <- function(pps, folder=NULL, verbose=TRUE) {
         message('No folders to add binaries from.')
         return(pps)
     }
-    folder <- normalizePath(folder)
+    folder <- normalizePath(folder, winslash = '/')
     pps@binaries$folder <- unique(c(pps@binaries$folder, folder))
     if(is.null(binList) ||
        length(binList) == 0) {
@@ -68,7 +68,7 @@ addBinaries <- function(pps, folder=NULL, verbose=TRUE) {
         # warning overflow later
         for(f in folder) {
             binList <- c(binList,
-                         list.files(f, recursive = TRUE, full.names = TRUE, pattern ='(Clicks|WhistlesMoans|GPL).*pgdf$'))
+                         list.files(f, recursive = TRUE, full.names = TRUE, pattern = ppVars()$binPattern))
         }
     }
     binList <- binList[!grepl('GPL_State', binList)]

@@ -15,14 +15,18 @@
 #' @param thresh maximum time apart in seconds for matching GPS coordinates to
 #'   data, if the closest coordinate is more than \code{thresh} apart then the
 #'   Latitude and Longitude values will be set to \code{NA}
+#' @param keepDiff logical flag to keep time difference column (between GPS time
+#'   and data time)
 #' @param \dots additional arguments for other methods
 #'
 #' @details Latitude and Longitude coordinates will be matched to the data
-#'   by using data.tables rolling join with \code{roll='nearest'}. After the
-#'   join is done, the time difference between the matched rows is checked
+#'   by interpolating between points in the provided GPS data. After the
+#'   interpolating is done, the time difference between the matched rows is checked
 #'   and any that are greater than the set threshold are set to NA. This is
 #'   done to prevent accidentally matching weird things if an incomplete set
-#'   of GPS data is provided.
+#'   of GPS data is provided. An approximate distance between the interpolated
+#'   points and the closest known GPS point is provided as a "gpsUncertainty"
+#'   column (distance in meters).
 #'
 #'   If \code{x} is an \linkS4class{AcousticEvent} or \linkS4class{AcousticStudy},
 #'   then \code{gps} can be omitted and will be read from the databases contained
@@ -57,9 +61,11 @@ setGeneric('addGps', function(x, gps=NULL, thresh = 3600, ...) standardGeneric('
 #' @importFrom data.table data.table setkeyv key setDT setDF
 #' @importFrom dplyr mutate select
 #' @importFrom utils globalVariables
+#' @importFrom stats approxfun
+#' @importFrom geosphere distGeo
 #' @export
 #'
-setMethod('addGps', 'data.frame', function(x, gps, thresh = 3600, ...) {
+setMethod('addGps', 'data.frame', function(x, gps, thresh = 3600, keepDiff=FALSE, ...) {
     # Check for right columns and proper types
     needCols <- c('UTC', 'Latitude', 'Longitude')
     missingCols <- needCols[!(needCols %in% colnames(gps))]
@@ -71,8 +77,19 @@ setMethod('addGps', 'data.frame', function(x, gps, thresh = 3600, ...) {
         pamWarning('Data needs column UTC.')
         return(x)
     }
-    if(!('POSIXct' %in% class(x$UTC))) x$UTC <- pgDateToPosix(x$UTC)
-    if(!('POSIXct' %in% class(gps$UTC))) gps$UTC <- pgDateToPosix(gps$UTC)
+    if(!('POSIXct' %in% class(x$UTC))) x$UTC <- parseUTC(x$UTC)
+    if(!('POSIXct' %in% class(gps$UTC))) gps$UTC <- parseUTC(gps$UTC)
+    # code for just interping:
+    # can just make functions once at start and pass along
+    gps <- distinct(gps)
+    gpsRange <- range(gps$UTC, na.rm=TRUE)
+    interpMethod <- ifelse(nrow(gps) > 1, 'linear', 'constant')
+    latFun <- approxfun(x=gps$UTC, y=gps$Latitude, rule=2, method=interpMethod, ties='ordered')
+    lonFun <- approxfun(x=gps$UTC, y=gps$Longitude, rule=2, method=interpMethod, ties='ordered')
+    # then use these for interpd results
+    # x$Latitude <- latFun(x$UTC)
+    # x$Longitude <- lonFun(x$UTC)
+    # problem with this is that we get nothing about really far apart matches
     # dummies for calculating time difference for threshold check later
     thisType <- attr(x, 'calltype')
     # x$dataTime <- x$UTC
@@ -103,14 +120,37 @@ setMethod('addGps', 'data.frame', function(x, gps, thresh = 3600, ...) {
         setkeyv(gps, 'UTC') # removing channel key from gps if its there i guess
     }
     result <- gps[x, roll='nearest']
-    result[abs(as.numeric(difftime(dataTime, gpsTime, units='secs'))) > thresh, c('Latitude', 'Longitude') := NA]
-    # result[, UTC := dataTime]
-    result$UTC <- result$dataTime
-    result[, c('gpsTime', 'dataTime') := NULL]
-    if(any(is.na(result$Longitude))) {
-        pamWarning('Some GPS coordinate matches exceeded time threshold, setting',
-                ' value to NA.')
+    result$closeLat <- result$Latitude
+    result$closeLon <- result$Longitude
+    # result[, closeLat := Latitude]
+    # result[, closeLon := Longitude]
+    tooFar <- abs(as.numeric(difftime(result$dataTime, result$gpsTime, units='secs'))) > thresh
+    if(keepDiff) {
+        result$timeDiff <- abs(as.numeric(difftime(result$dataTime, result$gpsTime, units='secs')))
     }
+    result[tooFar, c('Latitude', 'Longitude') := NA]
+    # result[abs(as.numeric(difftime(dataTime, gpsTime, units='secs'))) > thresh, c('Latitude', 'Longitude') := NA]
+    # result$Latitude[tooFar] <- NA
+    # result$Longitude[tooFar] <- NA
+    result$Latitude[!tooFar] <- latFun(result$dataTime[!tooFar])
+    result$Longitude[!tooFar] <- lonFun(result$dataTime[!tooFar])
+    result$gpsUncertainty <- NA
+    result$gpsUncertainty[!tooFar] <-
+        distGeo(matrix(c(result$Longitude[!tooFar], result$Latitude[!tooFar]), ncol=2),
+                           matrix(c(result$closeLon[!tooFar], result$closeLat[!tooFar]), ncol=2))
+    result[, UTC := dataTime]
+    # if were interp'ing out of bounds this ends up at 0 which is incorrect
+    if(interpMethod == 'linear') {
+        result$gpsUncertainty[result$UTC <= gpsRange[1]] <- NA
+        result$gpsUncertainty[result$UTC >= gpsRange[2]] <- NA
+    }
+    # result$UTC <- result$dataTime
+    if(any(is.na(result$Longitude))) {
+        avgTime <- mean(abs(as.numeric(difftime(result$dataTime[tooFar], result$gpsTime[tooFar], units='hours'))))
+        warning('Some GPS coordinate matches exceeded time threshold, setting',
+                ' value to NA. (Average ', round(avgTime,1), ' hours apart)')
+    }
+    result[, c('gpsTime', 'dataTime', 'closeLat', 'closeLon') := NULL]
     attr(result, 'calltype') <- thisType
     setDF(result)
     result
@@ -122,7 +162,8 @@ setMethod('addGps', 'data.frame', function(x, gps, thresh = 3600, ...) {
 setMethod('addGps', signature(x='AcousticEvent'), function(x, gps=NULL, thresh = 3600, ...) {
     if(is.null(gps)) {
         gps <- rbindlist(lapply(files(x)$db, function(db) {
-            gpsFromDb(db, extraCols=c('Speed', 'Heading', 'MagneticVariation', 'db'), ...)
+            # gpsFromDb(db, extraCols=c('Speed', 'Heading', 'MagneticVariation', 'db'), ...)
+            gpsFromDb(db, extraCols = 'db', ...)
         }))
     }
     if(is.null(gps) ||
@@ -130,7 +171,23 @@ setMethod('addGps', signature(x='AcousticEvent'), function(x, gps=NULL, thresh =
         pamWarning('No gps data found for event ', id(x))
         return(x)
     }
-    x@detectors <- addGps(x@detectors, gps, thresh, ...)
+    diffs <- numeric(0)
+    for(d in seq_along(detectors(x))) {
+        withGps <- suppressWarnings(
+            addGps(x@detectors[[d]], gps, thresh, keepDiff=TRUE, ...)
+        )
+        hasNa <- is.na(withGps$Latitude) | is.na(withGps$Longitude)
+        if(any(hasNa)) {
+            diffs <- c(diffs, withGps$timeDiff[hasNa])
+        }
+        withGps$timeDiff <- NULL
+        x@detectors[[d]] <- withGps
+    }
+    if(length(diffs) > 0) {
+        pamWarning(length(diffs), ' GPS matches in event ', id(x), ' exceeded time threshold, setting',
+                   ' to NA. (Average ', round(mean(diffs/3600, na.rm=TRUE),1), ' hours apart)',
+                   which=sys.nframe()-1)
+    }
     x
 })
 
@@ -146,6 +203,7 @@ setMethod('addGps', 'list', function(x, gps, thresh = 3600, ...) {
 #' @export
 #'
 setMethod('addGps', 'AcousticStudy', function(x, gps=NULL, thresh = 3600, ...) {
+    now <- Sys.time()
     if(is.null(gps)) {
         dbExists <- file.exists(files(x)$db)
         if(any(!dbExists)) {
@@ -157,32 +215,51 @@ setMethod('addGps', 'AcousticStudy', function(x, gps=NULL, thresh = 3600, ...) {
             if(!file.exists(db)) {
                 return(NULL)
             }
-            gpsFromDb(db, extraCols=c('Speed', 'Heading', 'MagneticVariation', 'db'), ...)
+            # gpsFromDb(db, extraCols=c('Speed', 'Heading', 'MagneticVariation', 'db'), ...)
+            gpsFromDb(db, extraCols = 'db', ...)
         }))
         if(is.null(gps) ||
            nrow(gps) == 0) {
             pamWarning('No gps data found in any databases.')
             return(x)
         }
-        gps <- checkGpsKey(gps)
-        # setkeyv(gps, c(key(gps), 'db'))
-        events(x) <- lapply(events(x), function(y) {
-            thisGps <- gps[gps$db %in% files(y)$db, c('UTC', 'Latitude', 'Longitude'), with=FALSE]
-            addGps(y, thisGps, thresh, ...)
-        })
+        # gps <- checkGpsKey(gps)
+        # # setkeyv(gps, c(key(gps), 'db'))
+        # events(x) <- lapply(events(x), function(y) {
+        #     thisGps <- gps[gps$db %in% files(y)$db, c('UTC', 'Latitude', 'Longitude'), with=FALSE]
+        #     addGps(y, thisGps, thresh, ...)
+        # })
 
-    } else {
-        gps <- checkGpsKey(gps)
-        events(x) <- lapply(events(x), function(y) {
-            if('db' %in% colnames(gps)) {
-                thisGps <- gps[gps$db %in% files(y)$db, c('UTC', 'Latitude', 'Longitude'), with=FALSE]
-            } else {
-                thisGps <- gps
-            }
-            addGps(y, thisGps, thresh, ...)
-            })
-    }
+    } #else {
+    #     gps <- checkGpsKey(gps)
+    #     events(x) <- lapply(events(x), function(y) {
+    #         if('db' %in% colnames(gps)) {
+    #             thisGps <- gps[gps$db %in% files(y)$db, c('UTC', 'Latitude', 'Longitude'), with=FALSE]
+    #         } else {
+    #             thisGps <- gps
+    #         }
+    #         addGps(y, thisGps, thresh, ...)
+    #     })
+    # }
+    gps <- checkGpsKey(gps)
+    events(x) <- lapply(events(x), function(y) {
+        if('db' %in% colnames(gps)) {
+            thisGps <- gps[gps$db %in% files(y)$db, c('UTC', 'Latitude', 'Longitude'), with=FALSE]
+        } else {
+            thisGps <- gps
+        }
+        suppressWarnings(addGps(y, thisGps, thresh, ...))
+    })
     gps(x) <- gps
+    warns <- mget('PAMWARNING', envir = sys.frame(1), ifnotfound = NA)[['PAMWARNING']]
+    if(is.data.frame(warns)) {
+        warns <- warns[warns$functionName == 'addGps' &
+                           warns$time > now, ]
+        if(nrow(warns) > 0) {
+            pamWarning(nrow(warns), ' events had GPS matches exceeding the time',
+                       ' threshold, use "getWarnings(x)" for details.')
+        }
+    }
     x <- .addPamWarning(x)
     x
 })
@@ -206,7 +283,7 @@ gpsFromDb <- function(db, extraCols=NULL, bounds=NULL) {
     if(!('gpsData' %in% dbListTables(con))) {
         cat('No "gpsData" table found in database', basename(db), '\n')
         addChoice <- menu(title = 'Would you like to add gps data to this database?',
-             choices = c('Yes', 'No'))
+                          choices = c('Yes', 'No'))
         if(addChoice %in% c(0, 2)) {
             return(NULL)
         }
@@ -241,6 +318,9 @@ checkGpsKey <- function(gps) {
     }
     if(!inherits(gps, 'data.table')) {
         setDT(gps)
+    }
+    if(!inherits(gps$UTC, 'POSIXct')) {
+        gps$UTC <- parseUTC(gps$UTC)
     }
     if('Channel' %in% colnames(gps)) {
         if(is.null(key(gps)) ||

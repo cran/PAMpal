@@ -2,6 +2,7 @@
 % Please edit documentation in R/writeEventClips.R
 \name{writeEventClips}
 \alias{writeEventClips}
+\alias{parseEventClipName}
 \title{Create Wav Clips of Data}
 \usage{
 writeEventClips(
@@ -15,6 +16,8 @@ writeEventClips(
   progress = TRUE,
   verbose = TRUE
 )
+
+parseEventClipName(file, part = c("event", "time"))
 }
 \arguments{
 \item{x}{\linkS4class{AcousticStudy} object containing data to make wav clips for}
@@ -42,17 +45,26 @@ longer}
 \item{progress}{logical flag to show progress bar}
 
 \item{verbose}{logical flag to show summary messages}
+
+\item{file}{file name to parse}
+
+\item{part}{part of file name to return}
 }
 \value{
 A vector of file names for the wav clips that were successfully
   created, any that were not able to be written will be \code{NA}. Note
   that currently this can only write clips with up to 2 channels. File names
   will be formatted as
-  [Event or Detection]_[EventId]CH[ChannelNumber(s)]_[YYYYMMDD]_[HHMMSS]_[mmm].wav
-  (the last numbers are the start time of the file in UTC, accurate to milliseconds)
+  [Event or Detection]_[Id]CH[ChannelNumber(s)]_[YYYYMMDD]_[HHMMSS]_[mmm].wav
+  The last numbers are the start time of the file in UTC, accurate to milliseconds.
+  The Id is either the event ID or the detection UID.
 }
 \description{
 Creates audio clips containing sounds from events or detections
+}
+\details{
+\code{parseEventClipName} parses the file names created to pull out
+  event names or file start times
 }
 \examples{
 

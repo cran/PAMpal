@@ -1,3 +1,43 @@
+## PAMpal 0.19.1
+
+- Adding `markAnnotated` function to flag whether or not detections are within annotation
+boxes
+
+## PAMpal 0.19.0
+
+- Adding `matchTimeData` function to add arbitrary data to AcousticStudies
+
+- Bug fixes for some random stuff
+
+## PAMpal 0.18.1
+
+- Updated to warnings in `addGps` to now be less overwhelming
+
+- Fixed bug for displaying some notes after combining with `bindStudies`
+
+- `addGps` now adds `gpsUncertainty` which says how many meters since to
+the closest GPS point. Useful to catch points where we have interpolated a lot.
+
+## PAMpal 0.18.0
+
+- Adding `addAnnotation` and related functions for annomate exporting
+
+- Explicitly marking joins that are expected to have multiple matches re:
+`dplyr::join`'s new behavior
+
+## PAMpal 0.17.2
+
+- Smol change to not grab unnecessary columns in `addGps`
+
+- Big speed improvements for processing with `mode='time'` and `mode='recording'`
+
+## PAMpal 0.17.1
+
+- Converting all paths to use '/' instead of '\\'
+
+- Found out `updateFiles` was unuseably slow, so I fixed it. I dunno, maybe 1000x faster
+depending on how many files you have? 
+
 ## PAMpal 0.17.0
 
 -   Removing the `$source` item in the `settings` slot for each `AcousticEvent`. These were not used for anything, and when the source was wav files it would end up with a huge repetitive list for every event. Ended up taking up a huge amount of memory, removing this results in `AcousticStudy`s that are half the size.

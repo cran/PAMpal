@@ -92,6 +92,7 @@
 #' @importFrom stringr str_trim
 #' @importFrom tcltk tk_choose.files
 #' @importFrom purrr transpose
+#' @importFrom lubridate interval int_overlaps
 #' @import dplyr
 #' @export
 #'
@@ -364,11 +365,15 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
             }
             binBounds <- convertPgDate(c(thisBin$data[[1]]$date, thisBin$data[[dataLen]]$date))
         }
+        binInt <- interval(binBounds[1], binBounds[2])
 
-        evPossible <- (binBounds[1] >= grouping$start & binBounds[1] <= grouping$end) |
-            (binBounds[2] >= grouping$start & binBounds[2] <= grouping$end) |
-            (binBounds[1] <= grouping$start & binBounds[2] >= grouping$end)
-
+        # evPossible <- (binBounds[1] >= grouping$start & binBounds[1] <= grouping$end) |
+        #     (binBounds[2] >= grouping$start & binBounds[2] <= grouping$end) |
+        #     (binBounds[1] <= grouping$start & binBounds[2] >= grouping$end)
+        evPossible <- int_overlaps(binInt, grouping$interval)
+        # if(!identical(evPossible2, evPossible)) {
+        #     browser()
+        # }
         # if not overlapping any events, skip doing data part mobetta
         if(!any(evPossible)) {
             if(progress) {
@@ -435,9 +440,15 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
                     'sr', 'callType', 'newUID')
     names(acousticEvents) <- evName
     noDetEvent <- character(0)
+    if(progress) {
+        cat('Organizing events...\n')
+        pb <- txtProgressBar(min=0, max=length(acousticEvents), style=3)
+    }
     for(i in seq_along(acousticEvents)) {
         thisData <- lapply(binData, function(x) {
-            data <- filter(x, x$UTC >= grouping$start[i], x$UTC <= grouping$end[i])
+            # data <- filter(x, x$UTC >= grouping$start[i], x$UTC <= grouping$end[i])
+            # data <- x[x$UTC %within% grouping$interval[i], ]
+            data <- x[withinLHS(x$UTC, grouping$interval[i]), ]
             if(nrow(data) == 0) return(NULL)
             data
         })
@@ -481,6 +492,12 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
             AcousticEvent(id=evName[i], detectors = thisData, settings = list(sr = thisSr),# source = thisSource),
                           files = list(binaries=binariesUsed, db=thisDb, calibration=calibrationUsed))
         ancillary(acousticEvents[[i]])$grouping <- grouping[i, ]
+        if(progress) {
+            setTxtProgressBar(pb, value=i)
+        }
+    }
+    if(progress) {
+        cat('\n')
     }
     if(length(noDetEvent) > 0) {
         pamWarning('No detections in Event(s) ', noDetEvent, n=6)
@@ -586,7 +603,7 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup'), id=NULL,
                         x$BinaryUsed <- thisBin$fileInfo$fileName
                         binData %>%
                             # select(-.data$BinaryFile) %>%
-                            inner_join(x, by='UID') %>%
+                            inner_join(x, by='UID', relationship='many-to-many') %>%
                             distinct()
                     }
                 }
@@ -798,7 +815,7 @@ getDbData <- function(db, grouping=c('event', 'detGroup'), label=NULL, extraCols
     }
 
     allDetections <- inner_join(
-        allDetections, allEvents, by=c('parentID'='Id')
+        allDetections, allEvents, by=c('parentID'='Id'), relationship='many-to-one'
     )
     if(!('newUID' %in% colnames(allDetections))) {
         allDetections$newUID <- -1
@@ -937,6 +954,7 @@ checkGrouping <- function(grouping, format) {
         evName[evName == i] <- paste0(i, '_',  1:evTable[i])
     }
     grouping$id <- evName
+    grouping$interval <- interval(grouping$start, grouping$end)
     grouping
 }
 
@@ -978,18 +996,6 @@ getModuleType <- function(x) {
         return('Cepstrum')
     }
     moduleType
-}
-
-#' @importFrom lubridate parse_date_time
-#'
-parseUTC <- function(x, format) {
-    if(inherits(x, 'factor')) {
-        x <- as.character(x)
-    }
-    if(is.character(x)) {
-        x <- parse_date_time(x, orders=format, tz='UTC', exact=TRUE, truncated=2, quiet=TRUE)
-    }
-    x
 }
 
 autoMode <- function(pps, grouping) {
@@ -1072,7 +1078,7 @@ wavToGroup <- function(db) {
         saGrp$id <- rep(1:(nrow(saGrp)/2), each=2)
         saGrp$id <- paste0(gsub('\\.sqlite3', '', basename(db)), '.', saGrp$id)
         saGrp <- tidyr::spread(saGrp, 'Status', 'UTC')
-        saGrp <- saGrp[!is.na(saGrp$Start) && !is.na(saGrp$Stop), ]
+        saGrp <- saGrp[!is.na(saGrp$Start) & !is.na(saGrp$Stop), ]
         if(nrow(saGrp) == 0) {
             pamWarning('Could not find appropriate start and stop times in Sound_Acquisition table')
             return(NULL)
