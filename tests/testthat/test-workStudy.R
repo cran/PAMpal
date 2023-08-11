@@ -110,7 +110,19 @@ test_that('Test working with AcousticStudy object', {
     expect_identical(normalizePath(files(exData)$recordings$file, winslash = '/'),
                      normalizePath(list.files(recs, full.names = TRUE), winslash = '/'))
     expect_warning(warnRec <- addRecordings(exData, folder = 'DNE', log=FALSE, progress=FALSE))
-
+    # test clip fun
+    clips <- getClipData(exData, mode='detection', buffer=c(0, .1))
+    expect_equal(nrow(clips[['Example.DGL1.8000003']]@.Data) / clips[['Example.DGL1.8000003']]@samp.rate,
+                 0.1)
+    expect_equal(
+        round(nrow(clips[['Example.DGL1.386000022']]@.Data) / clips[['Example.DGL1.386000022']]@samp.rate, 2),
+        .1 + round(exData$Example.DGL1$Whistle_and_Moan_Detector$duration, 2)
+    )
+    fixClips <- getClipData(exData, mode='detection', buffer=c(0, .1), fixLength=TRUE)
+    expect_equal(
+        round(nrow(fixClips[['Example.DGL1.386000022']]@.Data) / fixClips[['Example.DGL1.386000022']]@samp.rate, 2),
+        .1
+    )
     # test warning access from recorder warning
     warns <- getWarnings(warnRec)
     expect_is(warns, 'data.frame')
@@ -295,4 +307,74 @@ test_that('Test spec anno marking', {
     expect_true(all(getCepstrumData(exStudy)$inAnno))
     exStudy <- markAnnotated(exStudy, anno, tBuffer =c(0, 1.5), fBuffer = c(0, 400))
     expect_true(all(getWhistleData(exStudy)$inAnno[1:2]))
+})
+
+test_that('Test FPOD adding', {
+    data('exStudy')
+    fpodFile <- system.file('extdata', 'FPODExample.csv', package='PAMpal')
+    exStudy <- addFPOD(exStudy, fpodFile)
+    fpod <- getFPODData(exStudy)
+    expect_equal(nrow(fpod), 8)
+    expect_equal(nrow(exStudy[[1]][['FPOD']]), 4)
+    filtStudy <- filter(exStudy, MaxPkLinear > 60)
+    expect_equal(nrow(getFPODData(filtStudy)), 4)
+    noFPOD <- filter(exStudy, detectorName != 'FPOD')
+    expect_null(getFPODData(noFPOD))
+    exStudy <- addFPOD(exStudy, fpodFile, detectorName='FPOD2')
+    fpod <- getFPODData(exStudy)
+    expect_equal(nrow(fpod), 16)
+    expect_equal(nrow(exStudy[[1]][['FPOD2']]), 4)
+})
+
+test_that('Test subsampler', {
+    data('exStudy')
+    half <- sampleDetector(exStudy, n=0.5)
+    expect_equal(nDetections(half), 12)
+    two <- sampleDetector(exStudy, n=2)
+    expect_equal(nDetections(two), 2 * 3 * 2)
+    same <- sampleDetector(exStudy, n=Inf)
+    expect_equal(nDetections(exStudy), nDetections(same))
+    lessone <- sampleDetector(exStudy, n=-1)
+    expect_equal(nDetections(lessone), 28 - 2 * 1 * 3)
+    dropFive <- sampleDetector(exStudy, n=-5)
+    expect_equal(nDetections(dropFive), 2 * 2)
+    # same tests for event version
+    event <- exStudy[[1]]
+    half <- sampleDetector(event, n=.5)
+    expect_equal(nDetections(half), 6)
+    two <- sampleDetector(event, n=2)
+    expect_equal(nDetections(two), 2*3)
+    same <- sampleDetector(event, n=Inf)
+    expect_equal(nDetections(same), nDetections(event))
+    lessone <- sampleDetector(event, n=-1)
+    expect_equal(nDetections(lessone), 14 - 1*3)
+    lessHalf <- sampleDetector(event, n=-.5)
+    expect_equal(nDetections(lessHalf), 14-6)
+    dropFive <- sampleDetector(event, n=-5)
+    expect_equal(nDetections(dropFive), 2)
+})
+
+test_that('Test measure functions', {
+    data('exStudy')
+    measList <- list('Example.OE1' = list(a=1, b=2),
+                     'Example.OE2' = list(a=3, b=4))
+    measDf <- data.frame(eventId = c('Example.OE1', 'Example.OE2'),
+                         a = 4:5,
+                         b = 6:7,
+                         c = 10:11
+    )
+    exStudy <- addMeasures(exStudy, measList)
+    outMeas <- getMeasures(exStudy)
+    expect_identical(outMeas$a, c(1,3))
+    exStudy <- addMeasures(exStudy, measDf, replace=FALSE)
+    expect_identical(getMeasures(exStudy)$a, c(1,3))
+    exStudy <- addMeasures(exStudy, measDf, replace=TRUE)
+    expect_identical(getMeasures(exStudy)$a, 4:5)
+    expect_identical(colnames(outMeas), c('eventId', 'a', 'b'))
+    measDf$eventId <- c('Wrong', 'Name')
+    expect_error(addMeasures(exStudy, measDf))
+    measDf$eventId <- c('Example.OE1', 'Example.OE3')
+    measDf$a <- 20:21
+    exStudy <- addMeasures(exStudy, measDf, replace=TRUE)
+    expect_equal(getMeasures(exStudy)$a, c(20, 5))
 })

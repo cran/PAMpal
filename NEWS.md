@@ -1,3 +1,51 @@
+## PAMpal 1.0.0
+
+- Probably about time this was 1.0.0, just in time for a paper!
+
+- Updating front page readme
+
+## PAMpal 0.20.3
+
+- Fixed an issue where some rare clicks would cause processing to result in
+only `NA` values
+
+## PAMpal 0.20.2
+
+- Adding `addMeasures` and `getMeasures` functions
+
+## PAMpal 0.20.1
+
+- Exporting `timeJoin` from `matchTimeData` so other packages can use
+
+## PAMpal 0.20.0
+
+- Adding support for Click Train Detector with `grouping='clickTrain'` when processing
+with `mode='db'`. Events have prefix CT instead of OE or DGL. By default `mode='db'` will
+process all three of `grouping=c('event', 'detGroup', 'clickTrain')`
+
+## PAMpal 0.19.5
+
+- Adding `sampleDetector` function to subsample by detector
+
+## PAMpal 0.19.4
+
+- Adding `addFPOD` and `getFPODData` functions to deal with adding/getting FPOD 
+data from AcousticStudies
+
+## PAMpal 0.19.3
+
+- Updating `getClipData` and `writeEventClips` to have a `fixLength` option that 
+allows users to create clips of a fixed length using just the `buffer` argument
+
+- Allowing `processPgDetections` to take multiple `label` arguments to specify
+different table columns if using both DG and OE events in same db
+
+## PAMpal 0.19.2
+
+- Updating `markAnnotated` to give warnings on NA values instead of failing
+
+- Updating `roccaWhistleCalcs` to avoid divide by zero NA/Inf values
+
 ## PAMpal 0.19.1
 
 - Adding `markAnnotated` function to flag whether or not detections are within annotation

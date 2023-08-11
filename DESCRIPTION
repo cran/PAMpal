@@ -1,7 +1,7 @@
 Package: PAMpal
 Type: Package
 Title: Load and Process Passive Acoustic Data
-Version: 0.19.1
+Version: 1.0.0
 Authors@R: c(
   TS = person("Taiki", "Sakai", email = "taiki.sakai@noaa.gov", role = c("aut", "cre")),
   JB = person("Jay", "Barlow", role = c("ctb")),
@@ -27,7 +27,7 @@ Imports: tuneR, seewave, gam, data.table, RSQLite, stringr, purrr,
 RoxygenNote: 7.2.3
 Suggests: testthat
 NeedsCompilation: no
-Packaged: 2023-04-19 22:24:02 UTC; tnsak
+Packaged: 2023-08-11 22:38:52 UTC; tnsak
 Author: Taiki Sakai [aut, cre],
   Jay Barlow [ctb],
   Emily Griffiths [ctb],
@@ -35,4 +35,4 @@ Author: Taiki Sakai [aut, cre],
   Simone Baumann-Pickering [ctb],
   Julie Oswald [ctb]
 Repository: CRAN
-Date/Publication: 2023-04-19 23:00:02 UTC
+Date/Publication: 2023-08-11 23:40:02 UTC
