@@ -45,6 +45,8 @@
 #'   separate titles
 #' @param ylim optional y limits for mean spectra plot
 #' @param flim optional frequency limits for both plots
+#' @param cmap colors to use for concatenated click spectrogram, either a palette
+#'   function or vector of colors
 #' @param brightness value from -255 to 255, positive values increase brightness,
 #'   negative values decrease brightness of concatenated spectrogram image
 #' @param contrast value from -255 to 255, positive values increase contrast, negative
@@ -93,6 +95,7 @@ calculateAverageSpectra <- function(x, evNum=1, calibration=NULL, wl=512,
                                     title=NULL,
                                     ylim=NULL,
                                     flim=NULL,
+                                    cmap=hcl.colors(30, "YlOrRd", rev = TRUE),
                                     brightness=0,
                                     contrast=0,
                                     q=.01,
@@ -113,11 +116,12 @@ calculateAverageSpectra <- function(x, evNum=1, calibration=NULL, wl=512,
             calibration <- x@pps@calibration$ClickDetector[[1]]
         }
     }
-    clickData <- getClickData(ev)[c('eventId', 'UID')]
+    clickData <- getClickData(ev)[c('eventId', 'UID', 'UTC')]
     if(is.null(clickData)) {
         stop('No clicks in this event')
         return(NULL)
     }
+    clickData <- arrange(clickData, .data$UTC)[c('eventId', 'UID')]
     clickData <- distinct(clickData)
     clickUID <- clickData$UID
     # reordering because they get put in UID order
@@ -274,11 +278,13 @@ calculateAverageSpectra <- function(x, evNum=1, calibration=NULL, wl=512,
                 plotMat <- plotMat[, sortIx, drop=FALSE]
             }
             plotMat <- doContrast(doBrightness(plotMat, brightness), contrast)
-
+            if(is.function(cmap)) {
+                cmap <- cmap(30)
+            }
             image(x=1:ncol(plotMat),
                   y=seq(from=min(freq[plotFreq]*unitFactor), to=max(freq[plotFreq]*unitFactor), length.out=nrow(plotMat)),
                   z=t(plotMat), xaxt='n', yaxt='n', ylab=unitLab, xlab='Click Number', useRaster=TRUE,
-                  col = hcl.colors(30, "YlOrRd", rev = TRUE),
+                  col = cmap,
                   breaks=seq(from=0, to=255, length.out=31))
             title(title1)
             xPretty <- pretty(1:ncol(plotMat), n=5)

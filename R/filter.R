@@ -14,7 +14,7 @@
 #'   calculated parameters.
 #'
 #'   If the name of an environmental variable added using
-#'   \link{matchEnvData} is provided, will filter to only events with environmental
+#'   \link{matchEnvData,AcousticStudy-method} is provided, will filter to only events with environmental
 #'   variables matching those conditions.
 #'
 #'   If a provided logical expression uses
@@ -44,15 +44,25 @@
 #'
 #' @author Taiki Sakai \email{taiki.sakai@@noaa.gov}
 #' @rdname filter
+#' @method filter AcousticStudy
 #' @importFrom dplyr filter
 #' @importFrom rlang as_label quos parse_expr
 #' @export
 #'
 filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
-    dotChars <- sapply(quos(...), as_label)
+    dotChars <- sapply(quos(...), my_label)
     notFilt <- names(dotChars) != ''
     if(any(notFilt)) {
         pamWarning('Did you put "=" when you meant "=="? This filter will not be applied.')
+    }
+    if(all(notFilt)) {
+        return(.data)
+    }
+    tooLong <- grepl('\\.{3}', dotChars)
+    if(any(tooLong)) {
+        pamWarning('Condition(s) ', paste0(dotChars[tooLong], collapse=', '),
+                   ' are too long and cannot be parsed properly. Try to shorten',
+                   ' by assigning values to variables with short names.')
     }
     # do event level filters first
     # browser()
@@ -69,8 +79,8 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
         naSp <- sapply(events(.data), function(x) is.null(species(x)$id) || is.na(species(x)$id))
         if(any(naSp)) {
             pamWarning('Attempting to filter by species, but ', sum(naSp),
-                    ' species have not been set. These will be removed from',
-                    ' the filtered results.')
+                       ' species have not been set. These will be removed from',
+                       ' the filtered results.')
             events(.data) <- events(.data)[!naSp]
             if(length(events(.data)) == 0) {
                 .data <- .addPamWarning(.data)
@@ -116,6 +126,7 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
             return(.data)
         }
     }
+    evLevel <- isDb | isSpecies
     # do enviro?
     if(!is.null(ancillary(.data[[1]])$environmental)) {
         envNames <- names(ancillary(.data[[1]])$environmental)
@@ -133,26 +144,30 @@ filter.AcousticStudy <- function(.data, ..., .preserve=FALSE) {
                 .data <- .addPamWarning(.data)
                 return(.data)
             }
+            evLevel <- evLevel | hasEnv
         }
     }
-
+    dotChars <- dotChars[!evLevel]
     # events(.data) <- lapply(events(.data), function(x) {
     #     filter(x, ..., dotChars=dotChars)
     # })
     # isNull <- sapply(events(.data), is.null)
     # events(.data) <- events(.data)[!isNull]
-    .data <- detectorFilt(.data, dotChars=dotChars, ...)
+    if(length(dotChars) > 0) {
+        .data <- detectorFilt(.data, dotChars=dotChars, !!!quos(...)[!evLevel])
+    }
     .data <- .addPamWarning(.data)
     .data
 }
 # AcEv method no longer used internally because it was really slow, keeping because it doesnt hurt
 # speed is not an issue for single events
 #' @export
+#' @method filter AcousticEvent
 #'
 filter.AcousticEvent <- function(.data, ..., .preserve=FALSE, dotChars=NULL) {
     # browser()
     if(is.null(dotChars)) {
-        dotChars <- sapply(quos(...), as_label)
+        dotChars <- sapply(quos(...), my_label)
     }
     # isDetector <- grepl('^.{0,3}detector|^.{0,3}Detector', dotChars)
     isDetector <- grepl('\\b[Dd]etector\\b', dotChars, ignore.case=TRUE)
@@ -182,25 +197,56 @@ filter.AcousticEvent <- function(.data, ..., .preserve=FALSE, dotChars=NULL) {
 
 doFilter <- function(.x, dotChars=NULL, ...) {
     if(is.null(dotChars)) {
-        dotChars <- sapply(quos(...), as_label)
+        dotChars <- sapply(quos(...), my_label)
     }
-    hasCol <- sapply(dotChars, function(d) any(sapply(colnames(.x), function(c) grepl(c, d))))
+    # hasCol <- sapply(dotChars, function(d) {
+    #     splitCond <- strsplit(d, '\\&|\\|')[[1]]
+    #     isMatch <- rep(FALSE, length(splitCond))
+    #     for(i in seq_along(splitCond)) {
+    #         isMatch[i] <- any(sapply(colnames(.x), function(c) grepl(c, splitCond[i])))
+    #     }
+    #     if(!all(isMatch)) {
+    #         warning('Issue with ', d)
+    #     }
+    #     all(isMatch)
+    # })
+    hasCol <- sapply(dotChars, function(d) {
+        checkColMatch(d, colnames(.x))
+    })
     if(!any(hasCol)) {
         return(.x)
     }
     filter(.x, !!!quos(...)[hasCol])
+    # if(inherits(tryFilt, 'try-error')) {
+    # tryMsg <- attr(tryFilt, 'condition')$parent$message
+    # return(.x)
+    # }
+    # tryFilt
 }
+
+checkColMatch <- function(cond, names) {
+    splitCond <- strsplit(cond, '\\&|\\|')[[1]]
+    condMatch <- sapply(splitCond, function(x) {
+        any(sapply(names, function(n) grepl(n, x)))
+    })
+    all(condMatch)
+}
+
 # this is way faster to gather all dets as DFs, filter on big, then reassign to events
 # quos/labels is slow when you have to do it on thousands of events compared to the
 # actual filtering and data manipulation
 detectorFilt <- function(x, dotChars=NULL, ...) {
     if(is.null(dotChars)) {
-        dotChars <- sapply(quos(...), as_label)
+        dotChars <- sapply(quos(...), my_label)
     }
     dets <- getDetectorData(x, measures = FALSE)
+    condMatch <- rep(FALSE, length(dotChars))
     names(dets) <- NULL
     for(d in seq_along(dets)) {
+        thisMatch <- sapply(dotChars, function(c) checkColMatch(c, colnames(dets[[d]])))
+        condMatch <- condMatch | thisMatch
         dets[[d]] <- doFilter(dropCols(dets[[d]], c('db', 'species')), dotChars=dotChars, ...)
+        # reshape to $events$detectors
         dets[[d]] <- lapply(split(dets[[d]], dets[[d]]$eventId), function(e) {
             tmp <- split(e, e$detectorName)
             # ct <- attr(tmp[[1]], 'calltype')
@@ -212,10 +258,44 @@ detectorFilt <- function(x, dotChars=NULL, ...) {
             tmp
         })
     }
+    if(any(!condMatch)) {
+        pamWarning('Condition(s) ', paste0(dotChars[!condMatch], collapse=', '),
+                ' matched no parameter names. Check for possible misspellings.')
+    }
     dets <- squishList(unlist(dets, recursive=FALSE))
+    if(length(dets) == 0) {
+        events(x) <- list()
+        return(x)
+    }
     x <- x[names(events(x)) %in% names(dets)]
     for(e in names(events(x))) {
         detectors(x[[e]]) <- dets[[e]]
     }
     x
+}
+
+# avoids character length issue by labeling LHS and RHS separately
+#' @importFrom rlang quo_get_expr is_quosure is_expression
+#'
+my_label <- function(x) {
+    tryLabel <- as_label(x)
+    if(!grepl('\\.{3}', tryLabel)) {
+        return(tryLabel)
+    }
+    if(is_quosure(x)) {
+        x <- quo_get_expr(x)
+    } else if(is_expression(x)) {
+        x <- x#[[2]]
+    }
+    parts <- sapply(x, as_label)
+    if(parts[1] == '(') {
+        return(paste0('(',
+                      my_label(x[[2]]),
+                      ')'))
+    }
+    if(length(parts) != 3) {
+        return(parts[1])
+    }
+    new <- paste0(parts[c(2,1,3)], collapse=' ')
+    new
 }

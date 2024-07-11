@@ -89,7 +89,6 @@
 #' @importFrom PamBinaries loadPamguardBinaryFile
 #' @importFrom PAMmisc squishList
 #' @importFrom RSQLite dbConnect dbListTables dbReadTable dbDisconnect SQLite dbListFields
-#' @importFrom stringr str_trim
 #' @importFrom tcltk tk_choose.files
 #' @importFrom purrr transpose
 #' @importFrom lubridate interval int_overlaps
@@ -180,6 +179,13 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
                           progress=progress) {
     # start with checking grouping - parse csv if missing or provided as character and fmt times
     grouping <- checkGrouping(grouping, format)
+    overlappedGroups <- checkGroupOverlap(grouping)
+    if(overlappedGroups) {
+        stop('Events associated with separate databases overlap in time, ',
+             'these cannot be accurately processed together. Process each ',
+             'database and associated events/binaries separately, then ',
+             'combine with "bindStudies"')
+    }
     # this is a flag to see if any manual entries happened to grouping
     editGroup <- FALSE
     binList <- pps@binaries$list
@@ -197,11 +203,18 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
         grouping$db <- NA_character_
     }
     # if they are there and are valid, assume they assigned
-    dbToAssign <- which(sapply(basename(grouping$db), function(d) {
+    dbToAssign <- which(sapply(grouping$db, function(d) {
         if(is.na(d)) {
             return(TRUE)
         }
-        !any(grepl(d, allDbs))
+        if(!file.exists(d)) {
+            return(TRUE)
+        }
+        # file.exists is T for folders, folders are bad here
+        if(dir.exists(d)) {
+            return(TRUE)
+        }
+        !any(grepl(basename(d), allDbs))
     }))
     # match db to events
     if(length(allDbs) == 1) {
@@ -209,6 +222,7 @@ processPgTime <- function(pps, grouping=NULL, format='%Y-%m-%d %H:%M:%OS', id=NU
     } else {
         for(i in dbToAssign) {
             if(is.na(grouping$db[i]) ||
+               dir.exists(grouping$db[i]) ||
                !any(grepl(grouping$db[i], allDbs, fixed=TRUE))) {
                 dbPossible <- allDbs[sapply(saList, function(x) {
                     inInterval(c(grouping$start[i], grouping$end[i]), x)
@@ -549,8 +563,8 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup', 'clickTrain'), id=N
     tarMoCols <- ppVars()$tarMoCols
     extraCols <- tarMoCols
     if('clickTrain' %in% grouping) {
-        ctCols <- ppVars()$ctCols
-        extraCols <- c(extraCols, ctCols)
+        # ctCols <- ppVars()$ctCols
+        extraCols <- c(extraCols,  ppVars()$ctCols)
     }
     names(modWarn) <- modList
     allAcEv <- lapply(allDb, function(db) {
@@ -654,8 +668,8 @@ processPgDb <- function(pps, grouping=c('event', 'detGroup', 'clickTrain'), id=N
                     colnames(evTarMo) <- ppVars()$locCols
                 }
                 # clicktrain stuff
-                if(all(ctCols %in% colnames(ev[[1]]))) {
-                    ctData <- ev[[1]][1, ctCols]
+                if(all( ppVars()$ctCols %in% colnames(ev[[1]]))) {
+                    ctData <- ev[[1]][1,  ppVars()$ctCols]
                 } else {
                     ctData <- NULL
                 }
@@ -761,8 +775,8 @@ getDbData <- function(db, grouping=c('event', 'detGroup', 'clickTrain'), label=N
            'detGroup' = {
                # modules <- dbReadTable(con, 'Pamguard_Settings_Last')
                # dgTables <- modules %>%
-               #     mutate(unitName=str_trim(.data$unitName),
-               #            unitType=str_trim(.data$unitType)) %>%
+               #     mutate(unitName=strsplitboth(.data$unitName),
+               #            unitType=strsplitboth(.data$unitType)) %>%
                #     filter(.data$unitType == 'Detection Group Localiser') %>%
                #     distinct(.data$unitType, .data$unitName)
                # dgNames <- gsub(' ',  '_', dgTables$unitName)
@@ -853,7 +867,7 @@ getDbData <- function(db, grouping=c('event', 'detGroup', 'clickTrain'), label=N
         allDetections$newUID <- -1
     }
     allDetections <- allDetections %>%
-        mutate(BinaryFile = str_trim(.data$BinaryFile),
+        mutate(BinaryFile = strsplitboth(.data$BinaryFile),
                # UTC = as.POSIXct(as.character(UTC), format='%Y-%m-%d %H:%M:%OS', tz='UTC')) %>%
                UTC = pgDateToPosix(.data$UTC)) %>%
 
@@ -868,16 +882,18 @@ getDbData <- function(db, grouping=c('event', 'detGroup', 'clickTrain'), label=N
     }
 
     if(!('eventLabel' %in% colnames(allDetections))) {
-        allDetections$eventLabel <- NA
+        allDetections$eventLabel <- NA_character_
+    } else {
+        allDetections$eventLabel <- as.character(allDetections$eventLabel)
     }
     if(doSR) {
         allDetections <- matchSR(allDetections, db, extraCols=c('SystemType'))
     }
 
-    # apply str_trim to all character columns
+    # apply strsplitboth to all character columns
     whichChar <- which(sapply(allDetections, function(x) 'character' %in% class(x)))
     for(i in whichChar) {
-        allDetections[, i] <- str_trim(allDetections[, i])
+        allDetections[, i] <- strsplitboth(allDetections[, i])
     }
     # allDetections <- select(allDetections, -.data$UTC)
     allDetections <- dropCols(allDetections, 'UTC')
@@ -987,7 +1003,28 @@ checkGrouping <- function(grouping, format) {
     }
     grouping$id <- evName
     grouping$interval <- interval(grouping$start, grouping$end)
+    # overlappedGroups <- checkGroupOverlap(grouping)
+    # if(overlappedGroups) {
+    #     stop('Events associated with separate databases overlap in time, ',
+    #          'these cannot be accurately processed together. Process each ',
+    #          'database and associated events/binaries separately, then ',
+    #          'combine with "bindStudies"')
+    # }
     grouping
+}
+
+checkGroupOverlap <- function(x) {
+    if(!'db' %in% colnames(x) ||
+       length(unique(x$db)) == 1) {
+        return(FALSE)
+    }
+    byDb <- group_by(x, db) %>%
+        summarise(interval=interval(min(.data$start), max(.data$end)))
+    byDb$overlaps <- FALSE
+    for(i in 1:nrow(byDb)) {
+        byDb$overlaps[i] <- any(int_overlaps(byDb$interval[i], byDb$interval[-i]))
+    }
+    any(byDb$overlaps)
 }
 
 # read sound acq table with minimum formatting required
@@ -998,8 +1035,8 @@ readSa <- function(db) {
         return(NULL)
     }
     sa <- dbReadTable(con, 'Sound_Acquisition')
-    sa$Status <- str_trim(sa$Status)
-    sa$SystemType <- str_trim(sa$SystemType)
+    sa$Status <- strsplitboth(sa$Status)
+    sa$SystemType <- strsplitboth(sa$SystemType)
     sa$UTC <- pgDateToPosix(sa$UTC)
     sa
 }
@@ -1063,7 +1100,7 @@ wavToGroup <- function(db) {
         pamWarning('No Sound_Acquisition table in database ', db)
         return(NULL)
     }
-    sa$Status <- str_trim(sa$Status)
+    sa$Status <- strsplitboth(sa$Status)
     sa$UTC <- pgDateToPosix(sa$UTC)
     # sa <- filter(sa, .data$Status != 'Continue')
     wavCol <- findWavCol(sa)
@@ -1109,7 +1146,8 @@ wavToGroup <- function(db) {
         saGrp <- saGrp[c(TRUE, alt), ]
         saGrp$id <- rep(1:(nrow(saGrp)/2), each=2)
         saGrp$id <- paste0(gsub('\\.sqlite3', '', basename(db)), '.', saGrp$id)
-        saGrp <- tidyr::spread(saGrp, 'Status', 'UTC')
+        # saGrp <- tidyr::spread(saGrp, 'Status', 'UTC')
+        saGrp <- pivot_wider(saGrp, names_from='Status', values_from='UTC')
         saGrp <- saGrp[!is.na(saGrp$Start) & !is.na(saGrp$Stop), ]
         if(nrow(saGrp) == 0) {
             pamWarning('Could not find appropriate start and stop times in Sound_Acquisition table')
@@ -1216,8 +1254,8 @@ findModuleNames <- function(con, module='Detection Group Localiser') {
         if(nrow(mods) == 0) next
         dgTables <- mods[c(typeCols[i], nameCols[i])]
         names(dgTables) <- c('type', 'name')
-        dgTables$type <- str_trim(dgTables$type)
-        dgTables$name <- str_trim(dgTables$name)
+        dgTables$type <- strsplitboth(dgTables$type)
+        dgTables$name <- strsplitboth(dgTables$name)
         dgTables <- dgTables[dgTables$type == module, ]
         if(nrow(dgTables) == 0) next
         dgTables <- distinct(dgTables)

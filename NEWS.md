@@ -1,3 +1,59 @@
+## PAMpal 1.2.1
+
+- Reworked `plotDataExplorer` to use `shiny` instead of `manipulate` since
+the manipulate version stopped working a long time ago
+
+## PAMpal 1.2.0
+
+- Adding dive depth related functions for DCLDE2024 workshop: `addWaveHeight`,
+`calculateEchoDepth`, `filterEchoDepths`, and `runDepthReview`
+
+## PAMpal 1.1.0
+
+- Dropping `stringr` dependency
+
+- Adding CSV option for `addHydrophoneDepth`
+
+## PAMpal 1.0.7
+
+- Bugfix for `addNotes`
+
+- Added `fillZeroes` option to `getClipData`
+
+- `plotGram` works with gaps in data
+
+## PAMpal 1.0.6
+
+- Adding `cmap` options to `plotGram` and `calculateAverageSpectra`
+
+- Adding various image control options to `plotGram`
+
+## PAMpal 1.0.5
+
+- Updated `filter` to work more consistently with complicated queries
+
+- Added check for processing `mode='time'` where it would previously
+crash if `$db` was a folder, not a file
+
+## PAMpal 1.0.4
+
+- `calculateAverageSpectra` was not properly scaling the power spectrum, giving
+values ~50 dB higher than it should
+
+## PAMpal 1.0.3
+
+- `export_annomate` bugged file writing
+- Adding message if you try to export before adding annotation
+
+## PAMpal 1.0.2
+
+- Trying to remove hidden R 4.1 dependency from `\(c)` usage in `matchTimeData`
+
+## PAMpal 1.0.1
+
+- Fixed issue where noise free FFT was not assigned properly in `addSettings`
+- Safer fail-case for unparsed files in `addRecordings`
+
 ## PAMpal 1.0.0
 
 - Probably about time this was 1.0.0, just in time for a paper!

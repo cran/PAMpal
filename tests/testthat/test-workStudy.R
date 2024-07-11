@@ -133,7 +133,10 @@ test_that('Test working with AcousticStudy object', {
 test_that('Test filter', {
     data(exStudy)
     # test filtering
-    filterNone <- filter(exStudy, VARDNE == 'DNE')
+    expect_warning({
+        filterNone <- filter(exStudy, VARDNE == 'DNE')
+        })
+    expect_warning(filter(exStudy, peak = 3))
     # expect_identical(events(exStudy), events(filterNone))
     expect_true(checkSameDetections(exStudy, filterNone))
     exStudy <- setSpecies(exStudy, method='manual', value=letters[1:2])
@@ -146,21 +149,7 @@ test_that('Test filter', {
     peakFilter <- filter(exStudy, peak < 20)
     expect_true(all(detectors(peakFilter)$click$peak < 20))
     peakFilter <- filter(exStudy, peak < 2000)
-    # events(peakFilter) <- lapply(events(peakFilter), function(x) {
-    #     detectors(x) <- lapply(detectors(x), function(y) {
-    #         row.names(y) <- NULL
-    #         y
-    #     })
-    #     x
-    # })
-    # events(exStudy) <- lapply(events(exStudy), function(x) {
-    #     detectors(x) <- lapply(detectors(x), function(y) {
-    #         row.names(y) <- NULL
-    #         y
-    #     })
-    #     x
-    # })
-    # expect_identical(events(peakFilter), events(exStudy))
+
     expect_warning(filter(exStudy, detector == 'Click_Detector_1'))
     detFilter <- filter(exStudy, detectorName == 'Cepstrum_Detector')
     expect_equal(nClicks(detFilter), 0)
@@ -172,6 +161,15 @@ test_that('Test filter', {
     expect_true(checkSameDetections(exStudy, dbFilter))
     dbNone <- filter(exStudy, database == 'NODB.sqlite3')
     expect_equal(length(events(dbNone)), 0)
+    # test complex filters
+    multiFilt <- filter(exStudy, (detectorName != 'Cepstrum_Detector' | ici > .0016))
+    expect_true(all(
+        getCepstrumData(multiFilt)$ici > .0016
+    ))
+    expect_equal(nrow(getClickData(multiFilt)),
+                 nrow(getClickData(exStudy)))
+
+    expect_warning(filter(exStudy, (detectorName != 'Cepstrum_Detector' | blergh > 10)))
 })
 test_that('Test checkStudy test cases', {
     # create example data
@@ -377,4 +375,18 @@ test_that('Test measure functions', {
     measDf$a <- 20:21
     exStudy <- addMeasures(exStudy, measDf, replace=TRUE)
     expect_equal(getMeasures(exStudy)$a, c(20, 5))
+})
+
+test_that('Test wav clip name parser',  {
+    # so Det|Ev_db.OE#.UIDCH_TIME(14_3|8_6_3).wav
+    posix <- as.POSIXct('2020-10-31 12:00:11', tz='UTC') + .5
+    posixChar <- psxToChar(posix)
+    evName <- paste0('folder/', 'Event_Databasename.OE4CH3_', posixChar, '.wav')
+    detName <- paste0('folder/', 'Detection_Databasename.OE4.1234567CH3_', posixChar, '.wav')
+    expect_equal(parseEventClipName(evName, part='event'), 'Databasename.OE4')
+    expect_equal(parseEventClipName(evName, part='UID'), NA)
+    expect_equal(parseEventClipName(detName, part='UID'), '1234567')
+    expect_equal(parseEventClipName(evName, part='channel'), '3')
+    expect_equal(parseEventClipName(evName, part='time'), posix)
+    expect_equal(parseEventClipName(evName, part='UTC'), posix)
 })
