@@ -1,3 +1,44 @@
+## PAMpal 1.4.4
+
+- Fixed rare problem with finding whistle sample rate
+
+## PAMpal 1.4.3
+
+- Big with all 0 wav clips in `calculateAverageSpectra` causing errors
+
+- Oops changing fix so that only non-noise clips with all 0 get dropped
+
+## PAMpal 1.4.2
+
+- Oops didnt properly add AMAR wav file to `addRecordings`
+
+## PAMpal 1.4.1
+
+- Fixing bug with `updateFiles` paths in some edge cases
+
+## PAMpal 1.4.0
+
+- Adding supprt for parallel processing using the `future` package framework
+
+## PAMpal 1.3.2
+
+- Adding `runIciReview` function and better functionality for
+`runDepthReview`
+
+- Finally adding `default` option to `PAMpalSettings` and `addFunction` to
+just use all defaults (mostly for my convenience when testing and the 
+values dont matter)
+
+## PAMpal 1.3.1
+
+- Adding new ICI features to `calculateEchoDepth`
+
+## PAMpal 1.3.0
+
+- Added `mode='fixed'` option to `processPgDetections` that lets users create
+fixed time length events, processing all data similar to `mode='recording'`
+but organizing into uniform time chunks
+
 ## PAMpal 1.2.1
 
 - Reworked `plotDataExplorer` to use `shiny` instead of `manipulate` since
