@@ -1,3 +1,33 @@
+## PAMpal 1.5.2
+
+- Fixing check warnings for `[[` accessors
+
+## PAMpal 1.5.1
+
+- Fixing bug in echo depth code to drop duplicated clicks
+
+## PAMpal 1.5.0
+
+- Adding `fileFormat` and `dateFormat` options to `addRecordings` to allow
+for easier ways to deal with file formats I don't know about
+
+## PAMpal 1.4.7
+
+-Bug fix for `bindStudies` when duplicate event names are detected it wouldnt
+check that the new candidate name already existed, so it could create more
+unknown duplicates
+
+## PAMpal 1.4.6
+
+- Bug fixes for `calculateAverageSpectra` - returning safely with all-NA events
+instead of erroring
+
+- Added `snrVals` output to `calculateAverageSpectra`
+
+## PAMpal 1.4.5
+
+- Better warning for pre-2.0 data
+
 ## PAMpal 1.4.4
 
 - Fixed rare problem with finding whistle sample rate
