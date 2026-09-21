@@ -24,6 +24,7 @@
 #'   \code{TRUE}, then output clip length is entirely determined by the buffer value, as
 #'   if the detection or event had zero length. E.g. \code{buffer=c(-2,1)} will produce clips
 #'   3 seconds long, starting 2 seconds before the detection/event start time.
+#' @param rerun logical flag to rerun for existing wav clips
 #' @param progress logical flag to show progress bar
 #' @param verbose logical flag to show summary messages
 #'
@@ -54,8 +55,26 @@
 #'
 writeEventClips <- function(x, buffer = c(0, 0.1), outDir='.', mode=c('event', 'detection'),
                             channel = 1, filter=0, useSample=FALSE, progress=TRUE, verbose=TRUE,
+                            rerun=TRUE,
                             fixLength=FALSE) {
     if(!dir.exists(outDir)) dir.create(outDir)
+    if(isFALSE(rerun)) {
+        wavFiles <- list.files(outDir, pattern='wav$')
+        switch(match.arg(mode),
+               'event' = {
+                   wavEvents <- parseEventClipName(wavFiles, part='event')
+                   x <- filter(x, !.data$eventId %in% wavEvents)
+               },
+               'detection' = {
+                   wavIds <- parseEventClipName(wavFiles, part='UID')
+                   x <- filter(x, !.data$UID %in% wavIds)
+               }
+        )
+        if(nDetections(x) == 0) {
+            message('Appears that all wav files exist, and rerun=FALSE. No new files created')
+            return(character(0))
+        }
+    }
     if(length(channel) > 2) {  #### WAV CLIP SPECIFIC
         message('R can only write wav files with 2 or less channels, channels will be split',
                 ' across multiple files.')
@@ -75,11 +94,15 @@ writeEventClips <- function(x, buffer = c(0, 0.1), outDir='.', mode=c('event', '
     }
     getClipData(x, buffer=buffer, mode=mode, channel=channel, useSample=useSample,
                 progress=progress, verbose=verbose, FUN=writeOneClip, outDir=outDir,
-                filter=filter, fixLength=fixLength)
+                filter=filter, fixLength=fixLength, toWaveMC=FALSE)
 }
 
+# globalVariables(c('UID', 'eventId'))
+
+#' @importFrom audio save.wave
+#' 
 writeOneClip <- function(wav, name, time, channel, mode, outDir='.', filter) {
-    fileName <- paste0(oneUpper(mode), '_', name, 'CH', paste0(channel, collapse=''))
+    fileName <- paste0(oneUpper(mode), '_', name, 'CH', paste0(channel, collapse='-'))
     fileName <- paste0(fileName, '_',psxToChar(time[1]))
     fileName <- paste0(gsub('\\.wav$', '', fileName), '.wav')
     # timeRange[1] is actual start time in posix
@@ -96,11 +119,29 @@ writeOneClip <- function(wav, name, time, channel, mode, outDir='.', filter) {
     }
     if(!is.null(filterFrom) ||
        !is.null(filterTo)) {
-        for(i in 1:ncol(wav@.Data)) {
-            wav@.Data[, i] <- round(seewave::bwfilter(wav@.Data[, i], f=wav@samp.rate, from=filterFrom, to=filterTo)[, 1], 0)
+        # for(i in 1:ncol(wav@.Data)) {
+        #     wav@.Data[, i] <- round(seewave::bwfilter(wav@.Data[, i], f=wav@samp.rate, from=filterFrom, to=filterTo)[, 1], 0)
+        # }
+        if(is.null(dim(wav))) {
+            wav <- seewave::bwfilter(wav, f=wav$rate, from=filterFrom, to=filterTo)[, 1]
+        } else {
+            for(i in 1:nrow(wav)) {
+                wav[i,] <- seewave::bwfilter(wav[i,], f=wav$rate, from=filterFrom, to=filterTo)[, 1]
+            }
         }
     }
-    writeWave(wav, fileName, extensible = FALSE)
+    # writeWave(wav, fileName, extensible = FALSE)
+    maxTries <- 3
+    for(i in seq_len(maxTries)) {
+        tryWrite <- try(save.wave(wav, fileName), silent=TRUE)
+        if(is.null(tryWrite) ||
+           !inherits(tryWrite, 'try-error')) {
+            break
+        }
+    }
+    if(inherits(tryWrite, 'try-error')) {
+        warning('Problem writing file ', basename(fileName))
+    }
     fileName
 }
 
@@ -112,7 +153,10 @@ oneUpper <- function(x) {
 }
 
 psxToChar <- function(x) {
-    psFloor <- as.character(as.POSIXct(floor(as.numeric(x)), origin='1970-01-01 00:00:00', tz='UTC'))
+    psFloor <- format(as.POSIXct(
+        floor(as.numeric(x)), origin='1970-01-01 00:00:00', tz='UTC'),
+        format='%Y-%m-%d %H:%M:%S'
+    )
     psMilli <- round(as.numeric(x)-floor(as.numeric(x)), 3)
     psMilli <- sprintf('%.3f',psMilli)
     psMilli <- substr(psMilli, 3, 5)
@@ -136,7 +180,7 @@ parseEventClipName <- function(file, part=c('event', 'time', 'UID', 'channel', '
         }, USE.NAMES=FALSE))
     }
     file <- basename(file)
-    pattern <- '(Event|Detection)_(.*)(CH[0-9]{1,2})_([0-9]{14}_[0-9]{3}|[0-9]{8}_[0-9]{6}_[0-9]{3})\\.wav$'
+    pattern <- '(Event|Detection)_(.*)(CH[0-9\\-]*)_([0-9]{14}_[0-9]{3}|[0-9]{8}_[0-9]{6}_[0-9]{3})\\.wav$'
     switch(match.arg(part),
            'event' = {
                result <- gsub(pattern, '\\2', file)
@@ -155,6 +199,7 @@ parseEventClipName <- function(file, part=c('event', 'time', 'UID', 'channel', '
            'channel' = {
                result <- gsub(pattern, '\\3', file)
                result <- gsub('CH', '', result)
+               result <- gsub('-', ',', result)
                result
            },
            'time' = {

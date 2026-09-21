@@ -1,6 +1,6 @@
-06efc69989941a519e34cbc86881e3e4 *DESCRIPTION
-66cbb1e578aada7cdad0fbb0862ff98b *NAMESPACE
-9df19b29de73d19cc34e6fbc1b3a8f99 *NEWS.md
+a8fc38b3dc0bcc7cebc7214c4adf1473 *DESCRIPTION
+cbabea2083db1bf9103e2eef59ec12bc *NAMESPACE
+7f0e623aca25ddd71e04fbea951a2d44 *NEWS.md
 78fcb262644d48cb38fad612632cde89 *R/AllClass.R
 d32a703d3670d087ff87644cc7eea237 *R/AllGetSet.R
 0f93d6d50c9035b332f0034a77d21ca9 *R/PAMpalSettings.R
@@ -14,12 +14,12 @@ ba7a3f3fbd4044e66a37e152f89c1899 *R/addGps.R
 58afc377ff661588cf4a1cc6008aaa1f *R/addHydrophoneDepth.R
 a2b64d32dcda96f8524aea1f3e44ecac *R/addMeasures.R
 b9fa971ef9c57ed73782b1e5fdbc828f *R/addNote.R
-a58ae9e73ad001608e068e222368a388 *R/addRecordings.R
+cf5a6e6a2f177c16e4a9b17f8c76dc19 *R/addRecordings.R
 ef73c393e72b3b9d0f54006bbf08cef9 *R/addSettings.R
 8e67d170413e17c52044d098d69a9667 *R/addWaveHeight.R
 6b3609f7dd67b3a1d19fa78aec5200e2 *R/bindStudies.R
-c40204fbfb3015d30ecf5eaee0e1e426 *R/calculateAverageSpectra.R
-d79edd6699878d43745a2a637ac4e97b *R/calculateEchoDepth.R
+8f3fb7bda02622b50def59dccc3adbc7 *R/calculateAverageSpectra.R
+165e83cf57f272c1780f45f37578a113 *R/calculateEchoDepth.R
 bd341a2d02d777961c029e33da3a8ca5 *R/calculateICI.R
 11cdf97a5c1c454c6dce7891694b9b36 *R/calculateModuleData.R
 8760d825c1222b70c9dbdc800eefcd8b *R/checkStudy.R
@@ -28,7 +28,7 @@ adaee55567f961d1c0bc06e071cf4470 *R/export_banter.R
 e165253b1cef8112eef6559742570199 *R/filter.R
 205c44726c0b488f3748e18e986ba2c2 *R/filterEchoDepths.R
 a5099f83408ed4dcabe9509571526678 *R/getBinaryData.R
-4d396c8f7c1e5f74cd0613b5bcbdd142 *R/getClipData.R
+d743bfafb87191f84f55042218d5230e *R/getClipData.R
 1c17a16883501c998fe5e8ac04f88c9e *R/getDetectorData.R
 0e1c56e3690dcaa285842516b59f72ec *R/getWarnings.R
 5d84e1a77497128c9230e52aa251bcc2 *R/loadPamguardXML.R
@@ -36,7 +36,7 @@ a5099f83408ed4dcabe9509571526678 *R/getBinaryData.R
 d3e0817a3fe66e9bf11cef11527bba30 *R/matchEnvData.R
 520472985c4959b265f4762b696cfa27 *R/matchTimeData.R
 a45f7b0b728acacc7dfa1afdca2fbe37 *R/plotDataExplorer.R
-31fbcebbd2e7ad655e6f22dedcfd6afa *R/plotGram.R
+97e0b1308fc6e1c0de3e2a4bb962bb28 *R/plotGram.R
 fe811b19fa0df576980f897b1a9f7ad0 *R/plotWaveform.R
 4d87ee23c17802861bd1eeb16fbd3e01 *R/processPgDetections.R
 76f9e9e63732457ca4845c088ad99fa2 *R/removeBinaries.R
@@ -56,8 +56,8 @@ fedf0404719babfde24de31a41414e89 *R/standardClickCalcs.R
 99ad37a0ae40d3084c203806e2d683cb *R/updateFiles.R
 6fc5d63cb91362cd392f89626dbb71d1 *R/updatePamObject.R
 fed53e39a8ce16158029c93178175385 *R/utils.R
-34b5ea9f92957e16cc0c50d47b06e7bd *R/wavUtils.R
-29309bd12e05e38901cf5bc16e5e6313 *R/writeEventClips.R
+b27662968707833392ff7a486d488f53 *R/wavUtils.R
+f15cdcb6c1cd8f1d5f591bc4799dd4a1 *R/writeEventClips.R
 fd671cdfff6fda0286a4e5a5d2a21e9a *R/writeWignerData.R
 3ea5a99dd1738fabd75911d93a6c7bca *R/zzz.R
 db0637467ce01ba453d0c272bbd3a885 *README.md
@@ -95,7 +95,7 @@ e564b173d60045a0de63ff7693704a82 *man/addNote.Rd
 2eb0bd5aa362c277c3127e37baa46f7f *man/addSettings.Rd
 fd0354a373bdd544cbd8fd088ecbccc4 *man/addWaveHeight.Rd
 c0a073a05567fa6ce83f336aba855392 *man/bindStudies.Rd
-a769cd286552c1f61a0c6974419aa891 *man/calculateAverageSpectra.Rd
+ace42b4f8f5c191b2706756088310fe2 *man/calculateAverageSpectra.Rd
 6318843384a9354bf1f1725cc31d85a8 *man/calculateEchoDepth.Rd
 b2ae957a226642012075edcc7fcc382c *man/calculateICI.Rd
 166648fb19c296ceaf38adeb22a04065 *man/calculateModuleData.Rd
@@ -105,7 +105,7 @@ b2ae957a226642012075edcc7fcc382c *man/calculateICI.Rd
 d5091f16a3d8898ccbd47c6ccb3ce3b7 *man/filter.Rd
 57d4302bdc99bf3ede035a98b5c16e64 *man/filterEchoDepths.Rd
 3f0b12ffec82a4429372ad3b9ee32408 *man/getBinaryData.Rd
-fbbb8156eb8f52edb1f369938cbd034f *man/getClipData.Rd
+52ae2ea5ebcbe800721f16f8977fdfa0 *man/getClipData.Rd
 f7091b4b08ea4336bb67cf48d6af7b81 *man/getDetectorData.Rd
 08c97bf30bc7bb9ec3ded348e8f1be17 *man/getWarnings.Rd
 a40e08dff7eb66461ab9bb0b03780254 *man/is.AcousticEvent.Rd
@@ -139,7 +139,7 @@ d2db09aa167c8424e09f842201f56bed *man/testCeps.Rd
 efc06d1bb0f1671620c3e184a9ad3154 *man/testWhistle.Rd
 dde059ca5fea296a321d6dc2a714d6f5 *man/updateFiles.Rd
 9f745baeab6620006804135153d87397 *man/updatePamObject.Rd
-a46914002c2f01cb09b9b2e64522e069 *man/writeEventClips.Rd
+8f84796e2b8422194b175a4eaf8fc43e *man/writeEventClips.Rd
 dcad91ff7b25e58ae891f9a100d3a381 *man/writeWignerData.Rd
 024c90047c9aa726a31252abee23d78c *tests/testthat.R
 46db40d3832da183659110b571fbde6c *tests/testthat/test-accessors.R
@@ -147,4 +147,4 @@ fcc826c9986070b6544e7663ea67fecf *tests/testthat/test-paramCalcs.R
 8997938dad20652fb669085dcc5ea496 *tests/testthat/test-pps.R
 5e97610b2a57527443447af55f1853ca *tests/testthat/test-processPps.R
 03410cfadccc6359064dc7c81c16f2f5 *tests/testthat/test-utils.R
-b32c9863e7bb6d626a596510079af9bd *tests/testthat/test-workStudy.R
+87c1b1a99303732c4e8edb86bc62b1da *tests/testthat/test-workStudy.R

@@ -123,14 +123,14 @@ plotGram <- function(x, evNum=1,  start=NULL, end=NULL, channel=1,
     endBuff <- as.numeric(difftime(end, max(dets$UTC), units='secs'))
     wav <- getClipData(x, buffer=c(startBuff, endBuff), mode='event',
                        channel=channel, verbose=FALSE, progress=FALSE,
-                       fillZeroes=TRUE)[[1]]
+                       fillZeroes=TRUE, toWaveMC=FALSE)[[1]]
     if(is.null(sr)) {
-        sr <- wav@samp.rate
+        sr <- wav$rate
     }
-    if(sr > wav@samp.rate) {
+    if(sr > wav$rate) {
         stop('Chosen sampling rate is higher than the wav files sample rate, cannot upsample.')
     }
-    if(sr != wav@samp.rate) {
+    if(sr != wav$rate) {
         # wav <- downsample(wav, sr)
         wav <- myDownsample(wav, srTo=sr)
         # doing this so filled zeroes return to zeroes for all-0 chunks
@@ -144,7 +144,7 @@ plotGram <- function(x, evNum=1,  start=NULL, end=NULL, channel=1,
     if(abs(as.numeric(difftime(timeEnd, end, units='secs'))) > 1) {
         warning('Clip size did not match requested length')
     }
-    
+
     # don't actually need this - getClipData subsets to channel
     # if(channel > ncol(wav@.Data)) {
     #     stop('Specified channel is not present in wav file.', call.=FALSE)

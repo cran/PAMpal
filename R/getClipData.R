@@ -24,6 +24,8 @@
 #' @param FUN optional function to apply to wav clips. This function takes default inputs \code{wav},
 #'   a Wave class object, \code{name} the name of the detection or event, \code{time} the start and end
 #'   time of the clip, \code{channel} as above, \code{mode} as above, and additional args \dots
+#' @param toWaveMC logical flag to convert to a \code{tuneR::WaveMC} object
+#'   instead of the default \code{audio::audioSample} object (slower)
 #' @param \dots optional arguments to pass to \code{FUN}
 #'
 #' @return A named list of wav clips
@@ -41,18 +43,20 @@
 #' @author Taiki Sakai \email{taiki.sakai@@noaa.gov}
 #'
 #' @importFrom dplyr bind_rows arrange group_by summarise ungroup
-#' @importFrom tuneR readWave writeWave MCnames bind nchannel
+#' @importFrom tuneR readWave writeWave MCnames bind nchannel WaveMC
+#' @importFrom PAMmisc fastReadWave
 #'
 #' @export
 #'
 getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
                         channel = 1, useSample=FALSE, fixLength=FALSE,
                         fillZeroes=TRUE,
-                        progress=TRUE, verbose=TRUE, FUN=NULL, ...) {
+                        progress=TRUE, verbose=TRUE, FUN=NULL, toWaveMC=TRUE, ...) {
     if(!is.AcousticStudy(x)) {
         stop('"x" must be an AcousticStudy object.')
     }
-    recs <- checkRecordings(x)
+    # recs <- checkRecordings(x)
+    recs <- files(x)$recordings
     mode <- match.arg(mode)
 
     evDbs <- sapply(events(x), function(e) basename(files(e)$db))
@@ -65,7 +69,23 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
     # buffer <- abs(buffer) * c(-1, 1)
 
     if(is.null(FUN)) {
-        FUN <- function(wav, ...) wav
+        if(isTRUE(toWaveMC)) {
+            FUN <- function(wav, ...) {
+                bit <- wav$bits
+                sr <- wav$rate
+                wav <- unclass(wav)
+                if(!is.null(dim(wav))) {
+                    wav <- t(wav)
+                }
+                dim <- dim(wav)
+                wav <- as.integer(wav * 2^(bit-1))
+                dim(wav) <- dim
+                WaveMC(data=wav, samp.rate=sr, bit=bit)
+
+            }
+        } else {
+            FUN <- function(wav, ...) wav
+        }
     }
     if(fixLength &&
        buffer[2] - buffer[1] <= 0) {
@@ -80,6 +100,8 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
     nonConsec <- character(0)
     fileDNE <- character(0)
     noChan <- character(0)
+    allBefore <- character(0)
+    allAfter <- character(0)
     result <- character(0)
     on.exit({
         if(length(noMatch) > 0) {
@@ -92,7 +114,7 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
         if(length(nonConsec) > 0) {
             if(fillZeroes) {
                 # warning(oneUpper(mode), ' ', printN(nonConsec, 6),
-                        # ' spanned non-consecutive wav files, clip has been zero-filled.', call.=FALSE)
+                # ' spanned non-consecutive wav files, clip has been zero-filled.', call.=FALSE)
             } else {
                 warning(oneUpper(mode), ' ', printN(nonConsec, 6),
                         ' spanned two non-consecutive wav files, could not get clip.', call.=FALSE)
@@ -106,6 +128,12 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
             warning('Wav files for ', mode, ' ', printN(noChan, 6),
                     ' did not have the desired channels.', call.=FALSE)
         }
+        if(length(allBefore) > 0) {
+            warning('All wav files ended before ', mode, ' ', printN(allBefore, 6), call.=FALSE)
+        }
+        if(length(allAfter) > 0) {
+            warning('All wav files started after ', mode, ' ', printN(allAfter, 6), call.=FALSE)
+        }
     })
     # one DB at a time
     for(d in seq_along(dbMap)) {
@@ -113,6 +141,8 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
         if(length(thisDbMatch) == 0) next
         thisDbData <- x[thisDbMatch]
         wavMap <- dbMap[[d]]
+        mapMin <- min(wavMap$start)
+        mapMax <- max(wavMap$end)
         allTimes <- getTimeRange(thisDbData, mode=mode, sample=useSample)
         allResult <- vector('list', length = length(allTimes))
         names(allResult) <- names(allTimes)
@@ -129,6 +159,20 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
             # these are for times where desired start/end is outside of wav
             if(fillZeroes) {
                 zeroBuff <- c(0,0)
+            }
+            if(timeRange[1] > mapMax) {
+                allBefore <- c(allBefore, names(allResult)[1])
+                if(progress) {
+                    setTxtProgressBar(pb, value=i)
+                }
+                next
+            }
+            if(timeRange[2] < mapMin) {
+                allAfter <- c(allAfter, names(allResult)[1])
+                if(progress) {
+                    setTxtProgressBar(pb, value=i)
+                }
+                next
             }
             # for start and end check if in range. if we buffered, try undoing that first.
             # so like if buffer put us before first file, start and beginning of first file instead.
@@ -159,6 +203,13 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
                     next
                 }
                 startIx <- min(which(wavMap$start > timeRange[1]))
+                if(wavMap$start[startIx] > timeRange[2]) {
+                    noMatch <- c(noMatch, names(allResult)[i])
+                    if(progress) {
+                        setTxtProgressBar(pb, value=i)
+                    }
+                    next
+                }
                 # if fill zeroes, need to pre-pend by amount of zeroes here
                 if(fillZeroes) {
                     zeroBuff[1] <- as.numeric(difftime(wavMap$start[startIx], timeRange[1], units='secs'))
@@ -192,6 +243,13 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
                 }
                 # if fill zeroes, backfill by amount of zeroes here
                 endIx <- max(which(wavMap$end < timeRange[2]))
+                if(wavMap$end[endIx] < timeRange[1]) {
+                    noMatch <- c(noMatch, names(allResult)[i])
+                    if(progress) {
+                        setTxtProgressBar(pb, value=i)
+                    }
+                    next
+                }
                 if(fillZeroes) {
                     zeroBuff[2] <- as.numeric(difftime(timeRange[2], wavMap$end[endIx], units='secs'))
                 }
@@ -225,40 +283,69 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
                 if(w == endIx) {
                     readEnd <- endTime
                 }
-                wavResult[[w]] <- readWave(wavMap$file[w], from = readStart,
-                                           to = readEnd, units = 'seconds', toWaveMC = TRUE)
-                thisSr <- wavResult[[w]]@samp.rate
+                # wavResult[[w]] <- readWave(wavMap$file[w], from = readStart,
+                #                            to = readEnd, units = 'seconds', toWaveMC = TRUE)
+                wavResult[[w]] <- fastReadWave(wavMap$file[w], from = readStart,
+                                               to = readEnd)
+                nChannels <- ifelse(is.null(dim(wavResult[[w]])), 1, dim(wavResult[[w]])[1])
+                thisBits <- wavResult[[w]]$bits
+                # thisSr <- wavResult[[w]]@samp.rate
+                thisSr <- wavResult[[w]]$rate
                 if(fillZeroes &&
                    w == startIx &&
                    zeroBuff[1] != 0) {
-                    thisZeroes <- WaveMC(data=matrix(0,
-                                                     ncol=nchannel(wavResult[[w]]),
-                                                     nrow=thisSr*zeroBuff[1]),
-                                         samp.rate=thisSr, bit=wavResult[[w]]@bit)
-                    wavResult[[w]] <- bind(thisZeroes, wavResult[[w]])
+                    # thisZeroes <- WaveMC(data=matrix(0,
+                    #                                  ncol=nchannel(wavResult[[w]]),
+                    #                                  nrow=thisSr*zeroBuff[1]),
+                    #                      samp.rate=thisSr, bit=wavResult[[w]]@bit)
+                    thisZeroes <- matrix(0,
+                                         nrow=nChannels,
+                                         ncol=thisSr*zeroBuff[1])
+                    attr(thisZeroes, 'rate') <- thisSr
+                    attr(thisZeroes, 'bits') <- thisBits
+                    class(thisZeroes) <- 'audioSample'
+                    # wavResult[[w]] <- bind(thisZeroes, wavResult[[w]])
+                    wavResult[[w]] <- bindAudioSample(thisZeroes, wavResult[[w]])
                 }
                 if(fillZeroes &&
                    w == endIx &&
                    zeroBuff[2] != 0) {
-                    thisZeroes <- WaveMC(data=matrix(0,
-                                                     ncol=nchannel(wavResult[[w]]),
-                                                     nrow=thisSr*zeroBuff[2]),
-                                         samp.rate=thisSr, bit=wavResult[[w]]@bit)
-                    wavResult[[w]] <- bind(wavResult[[w]], thisZeroes)
+                    # thisZeroes <- WaveMC(data=matrix(0,
+                    #                                  ncol=nchannel(wavResult[[w]]),
+                    #                                  nrow=thisSr*zeroBuff[2]),
+                    #                      samp.rate=thisSr, bit=wavResult[[w]]@bit)
+                    thisZeroes <- matrix(0,
+                                         nrow=nChannels,
+                                         ncol=thisSr*zeroBuff[2])
+                    attr(thisZeroes, 'rate') <- thisSr
+                    attr(thisZeroes, 'bits') <- thisBits
+                    class(thisZeroes) <- 'audioSample'
+                    # wavResult[[w]] <- bind(wavResult[[w]], thisZeroes)
+                    wavResult[[w]] <- bindAudioSample(wavResult[[w]], thisZeroes)
                 }
                 if(fillZeroes &&
                    w != endIx &&
                    wavMap$timeDiff[w+1] > 0) {
 
-                    thisZeroes <- WaveMC(data=matrix(0, ncol=nchannel(wavResult[[w]]), nrow=thisSr*wavMap$timeDiff[w+1]),
-                                         samp.rate=thisSr, bit=wavResult[[w]]@bit)
-                    wavResult[[w]] <- bind(wavResult[[w]], thisZeroes)
+                    # thisZeroes <- WaveMC(data=matrix(0, ncol=nchannel(wavResult[[w]]), nrow=thisSr*wavMap$timeDiff[w+1]),
+                    #                      samp.rate=thisSr, bit=wavResult[[w]]@bit)
+                    thisZeroes <- matrix(0,
+                                         nrow=nChannels,
+                                         ncol=thisSr*wavMap$timeDiff[w+1])
+                    attr(thisZeroes, 'rate') <- thisSr
+                    attr(thisZeroes, 'bits') <- thisBits
+                    class(thisZeroes) <- 'audioSample'
+                    # wavResult[[w]] <- bind(wavResult[[w]], thisZeroes)
+                    wavResult[[w]] <- bindAudioSample(wavResult[[w]], thisZeroes)
                 }
             }
 
             wavResult <- wavResult[!sapply(wavResult, is.null)]
-            wavResult <- do.call(bind, wavResult) # [, 1:min(2, ncol(wavResult))]
-            chanIn <- channel <= ncol(wavResult@.Data)
+            # wavResult <- do.call(bind, wavResult) # [, 1:min(2, ncol(wavResult))]
+            wavResult <- do.call(bindAudioSample, wavResult) # [, 1:min(2, ncol(wavResult))]
+            # chanIn <- channel <= ncol(wavResult@.Data)
+            chanResult <- ifelse(is.null(dim(wavResult)), 1, dim(wavResult)[1])
+            chanIn <- channel <= chanResult
             if(!any(chanIn)) {
                 noChan <- c(noChan, names(allResult)[i])
                 if(progress) {
@@ -269,8 +356,11 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
             if(!all(chanIn)) {
                 noChan <- c(noChan, names(allResult)[i])
             }
-            wavResult <- wavResult[, channel[chanIn]]
-            colnames(wavResult) <- MCnames$name[1:ncol(wavResult)]
+            # wavResult <- wavResult[, channel[chanIn]]
+            if(chanResult != 1) {
+                wavResult <- wavResult[channel[chanIn], ]
+            }
+            # colnames(wavResult) <- MCnames$name[1:ncol(wavResult)]
             allResult[[i]] <- FUN(wavResult, name=names(allResult)[i], time=timeRange, channel=channel[chanIn], mode=mode, ...)
 
             if(progress) {
@@ -284,4 +374,39 @@ getClipData <- function(x, buffer = c(0, 0.1), mode=c('event', 'detection'),
         result <- c(result, allResult)
     }
     invisible(result)
+}
+
+bindAudioSample <- function(x, ...) {
+    checkAllowed <- audioSampleEqual(x, ...)
+    if(!all(checkAllowed)) {
+        stop('Could not combine audioSample objects with different attributes')
+    }
+    sampAtts <- getSampAttrs(x)
+
+    if(sampAtts$channels == 1) {
+        vals <- do.call(`c`, list(x, ...))
+        vals <- matrix(vals, nrow=1)
+    } else {
+        vals <- do.call(cbind, list(x, ...))
+    }
+    class(vals) <- 'audioSample'
+    attr(vals, 'rate') <- sampAtts$rate
+    attr(vals, 'bits') <- sampAtts$bit
+    vals
+}
+
+audioSampleEqual <- function(x, ...) {
+    compAttrs <- getSampAttrs(x)
+    dotList <- list(...)
+    check <- sapply(dotList, function(d) {
+        setequal(getSampAttrs(d), compAttrs)
+    })
+    check
+}
+
+getSampAttrs <- function(x) {
+    result <- attributes(x)[c('rate',
+                              'bits')]
+    result$channels <- ifelse(is.null(dim(x)), 1, dim(x)[1])
+    result
 }
